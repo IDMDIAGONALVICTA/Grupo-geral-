@@ -2640,11 +2640,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque VGV");
       return soma;
     } else {
-      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
-      // Se não há filtro de mês, encontrar o último mês com dados em todos os anos e retornar o estoque VGV desse mês.
-      // O último mês com dados é determinado pela função ultimoMesComInfoSum.
-      // Como a função ultimoMesComInfoSum já retorna o último mês com soma > 0 para um dado ano,
-      // precisamos encontrar o último mês no ano mais recente com dados.
+      // Sem filtro de mês: pegar o estoque do último mês com dados no ano mais recente.
       const anosComDados = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
       for (const ano of anosComDados) {
         const {soma} = ultimoMesComInfoSum(data, ano, "Estoque VGV");
