@@ -2581,14 +2581,19 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       }
     }
     
-    // Sem filtro de mês: pegar último estoque disponível
+    // Sem filtro de mês: pegar último estoque disponível do ano filtrado
     if (selectedAno){
       const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque Qtd");
       return soma;
     } else {
-      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
-      const total = anos.reduce((acc, ano)=> acc + ultimoMesComInfoSum(data, ano, "Estoque Qtd").soma, 0);
-      return total;
+      // Sem filtro de ano: pegar o último mês do ano mais recente
+      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
+      if (anos.length > 0) {
+        const anoMaisRecente = anos[0];
+        const {soma} = ultimoMesComInfoSum(data, anoMaisRecente, "Estoque Qtd");
+        return soma;
+      }
+      return 0;
     }
   };
   window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
@@ -2635,14 +2640,19 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       }
     }
     
-    // Sem filtro de mês: pegar último estoque disponível
+    // Sem filtro de mês: pegar último estoque disponível do ano filtrado
     if (selectedAno){
       const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque VGV");
       return soma;
     } else {
-      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
-      const total = anos.reduce((acc, ano)=> acc + ultimoMesComInfoSum(data, ano, "Estoque VGV").soma, 0);
-      return total;
+      // Sem filtro de ano: pegar o último mês do ano mais recente
+      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
+      if (anos.length > 0) {
+        const anoMaisRecente = anos[0];
+        const {soma} = ultimoMesComInfoSum(data, anoMaisRecente, "Estoque VGV");
+        return soma;
+      }
+      return 0;
     }
   };
 })();
