@@ -675,41 +675,35 @@
 <div id="badgeLoaded" style="position:fixed;top:8px;right:8px;background:#0ea5e9;color:#fff;padding:8px 12px;border-radius:8px;z-index:9999;font-family:Inter,system-ui">Atualizado automaticamente da Planilha em 2025-11-03 14:20:05</div>
 <script>
 
-
 var allData = [];
 (function() {
   try {
-    var csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pubhtml?gid=0&single=true";
-    var bust = "&_cb=" + Date.now();
-    var url = csvUrl + bust;
+    var csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pub?gid=0&single=true&output=csv";
     var req = new XMLHttpRequest();
-    req.open('GET', url, false); // síncrono mantém o fluxo existente
-    try {
-      req.setRequestHeader('Cache-Control','no-cache, no-store, max-age=0');
-      req.setRequestHeader('Pragma','no-cache');
-    } catch(e){}
+    req.open('GET', csvUrl, false); // synchronous to ensure allData is ready
     req.send(null);
-
-    if (req.status === 200 && req.responseText && req.responseText.length > 0) {
-      var parsed, rowsArr;
-      if (csvUrl.includes("pubhtml")){
-        rowsArr = parsePubHtmlToRows(req.responseText);
-        parsed = { data: rowsArr };
-      } else {
-        parsed = Papa.parse(req.responseText, {
-          header: true, dynamicTyping: true, skipEmptyLines: true,
-        });
-      }
+    if (req.status === 200) {
+      var parsed = Papa.parse(req.responseText, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+      });
+      // Trim keys and normalize
       function t(s) { return (s||"").toString().trim(); }
       allData = parsed.data.map(function(r) {
         var o = {};
-        Object.keys(r).forEach(function(k) { o[t(k)] = r[k]; });
+        Object.keys(r).forEach(function(k) {
+          o[t(k)] = r[k];
+        });
+        // Coerções numéricas seguras
         function num(x) {
           var v = (typeof x === 'string') ? x.replace(/\./g,'').replace(',', '.') : x;
           v = parseFloat(v);
           return isFinite(v) ? v : 0;
         }
-        return {"Empresa": o["Empresa"] ?? o["EMPRESA"] ?? o["empresa"] ?? "",
+        // Campos esperados pelo dashboard
+        return {
+          "Empresa": o["Empresa"] ?? o["EMPRESA"] ?? o["empresa"] ?? "",
           "Mês": o["Mês"] ?? o["Mes"] ?? o["MÊS"] ?? o["MES"] ?? "",
           "Ano": num(o["Ano"] ?? o["ANO"] ?? o["ano"]),
           "Linha de Produto": o["Linha de Produto"] ?? o["LINHA DE PRODUTO"] ?? o["Linha"] ?? "",
@@ -722,156 +716,149 @@ var allData = [];
           "Estoque Qtd": num(o["Estoque Qtd"] ?? o["ESTOQUE QTD"] ?? o["Estoque_Qtd"]),
           "% VSO": num(o["% VSO"] ?? o["%VSO"] ?? o["VSO"] ?? o["% vso"] ?? 0)
         };
-      }).filter(function(r){
-        return r["Ano"] && r["Mês"];
       });
+      console.log("Planilha carregada:", allData.length, "linhas");
     } else {
-      throw new Error("CSV vazio ou status " + req.status);
+      console.warn("Falha ao buscar CSV", req.status, req.statusText);
     }
-  } catch(err) {
-    // Fallback assíncrono com fetch + no-store
-    console.warn("[fallback] XHR falhou, tentando fetch:", err);
-    window.__asyncLoadPromise = (csvUrl.includes("pubhtml") 
-      ? fetch(csvUrl + "&_cb=" + Date.now(), {cache:"no-store"}).then(r=>{if(!r.ok) throw new Error("HTTP "+r.status); return r.text();}).then(function(txt){
-          var rows = parsePubHtmlToRows(txt);
-          // Normalize like CSV path used to
-          function t(s){ return (s||"").toString().trim(); }
-          function num(x){ var v=(typeof x==='string')?x.replace(/\./g,'').replace(',', '.'):x; v=parseFloat(v); return isFinite(v)?v:0; }
-          allData = rows.map(function(o){
-            return {
-              "Empresa": o["Empresa"] ?? o["EMPRESA"] ?? o["empresa"] ?? "",
-              "Mês": o["Mês"] ?? o["Mes"] ?? o["MÊS"] ?? o["MES"] ?? "",
-              "Ano": num(o["Ano"] ?? o["ANO"] ?? o["ano"]),
-              "Linha de Produto": o["Linha de Produto"] ?? o["LINHA DE PRODUTO"] ?? o["Linha"] ?? "",
-              "Produto": o["Produto"] ?? o["PRODUTO"] ?? "",
-              " Meta VGV ": num(o[" Meta VGV "] ?? o["Meta VGV"] ?? o["META VGV"] ?? o["Meta_VGV"]),
-              " Real VGV ": num(o[" Real VGV "] ?? o["Real VGV"] ?? o["REAL VGV"] ?? o["Real_VGV"]),
-              "Meta Qtd": num(o["Meta Qtd"] ?? o["META QTD"] ?? o["Meta_Qtd"]),
-              "Real Qtd": num(o["Real Qtd"] ?? o["REAL QTD"] ?? o["Real_Qtd"]),
-              "Estoque VGV": num(o["Estoque VGV"] ?? o["ESTOQUE VGV"] ?? o["Estoque_VGV"]),
-              "Estoque Qtd": num(o["Estoque Qtd"] ?? o["ESTOQUE QTD"] ?? o["Estoque_Qtd"]),
-              "% VSO": num(o["% VSO"] ?? o["%VSO"] ?? o["VSO"] ?? o["% vso"] ?? 0)
-            };
-          }).filter(function(r){ return r["Ano"] && r["Mês"]; });
-      })
-      : fetch(csvUrl + "&_cb=" + Date.now(), {cache:"no-store"}).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
-    )
-      .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
-      .then(function(txt){
-        var parsed = Papa.parse(txt, {header:true, dynamicTyping:true, skipEmptyLines:true});
-        function t(s) { return (s||"").toString().trim(); }
-        allData = parsed.data.map(function(r){
-          var o = {};
-          Object.keys(r).forEach(function(k){ o[t(k)] = r[k]; });
-          function num(x) {
-            var v = (typeof x === 'string') ? x.replace(/\./g,'').replace(',', '.') : x;
-            v = parseFloat(v);
-            return isFinite(v) ? v : 0;
-          }
-          return {
-            "Empresa": o["Empresa"] ?? o["EMPRESA"] ?? o["empresa"] ?? "",
-            "Mês": o["Mês"] ?? o["Mes"] ?? o["MÊS"] ?? o["MES"] ?? "",
-            "Ano": num(o["Ano"] ?? o["ANO"] ?? o["ano"]),
-            "Linha de Produto": o["Linha de Produto"] ?? o["LINHA DE PRODUTO"] ?? o["Linha"] ?? "",
-            "Produto": o["Produto"] ?? o["PRODUTO"] ?? "",
-            " Meta VGV ": num(o[" Meta VGV "] ?? o["Meta VGV"] ?? o["META VGV"] ?? o["Meta_VGV"]),
-            " Real VGV ": num(o[" Real VGV "] ?? o["Real VGV"] ?? o["REAL VGV"] ?? o["Real_VGV"]),
-            "Meta Qtd": num(o["Meta Qtd"] ?? o["META QTD"] ?? o["Meta_Qtd"]),
-            "Real Qtd": num(o["Real Qtd"] ?? o["REAL QTD"] ?? o["Real_Qtd"]),
-            "Estoque VGV": num(o["Estoque VGV"] ?? o["ESTOQUE VGV"] ?? o["Estoque_VGV"]),
-            "Estoque Qtd": num(o["Estoque Qtd"] ?? o["ESTOQUE QTD"] ?? o["Estoque_Qtd"]),
-            "% VSO": num(o["% VSO"] ?? o["%VSO"] ?? o["VSO"] ?? o["% vso"] ?? 0)
-          };
-        }).filter(function(r){ return r["Ano"] && r["Mês"]; });
-      })
-      .catch(function(e){
-        console.error("Falha no fetch CSV:", e);
-        allData = [];
-      });
+  } catch(e) {
+    console.error("Erro ao carregar CSV:", e);
   }
 })();
 
 
-// Aux: parse pubhtml table to array of objects
-function parsePubHtmlToRows(htmlText){
-  try{
-    var doc = new DOMParser().parseFromString(htmlText, 'text/html');
-    var table = doc.querySelector('table');
-    if(!table) return [];
-    // Build headers
-    var ths = table.querySelectorAll('thead th');
-    var headers = [];
-    if (ths.length){
-      headers = Array.from(ths).map(th => th.textContent.trim());
-    } else {
-      // fallback: first row as header
-      var firstRow = table.querySelector('tr');
-      if(!firstRow) return [];
-      headers = Array.from(firstRow.children).map(td => td.textContent.trim());
-    }
-    // Build rows
-    var rows = [];
-    var trs = table.querySelectorAll('tbody tr');
-    if (!trs.length){
-      // fallback: all rows after first
-      trs = table.querySelectorAll('tr');
-      trs = Array.from(trs).slice(1);
-    } else {
-      trs = Array.from(trs);
-    }
-    rows = trs.map(tr => {
-      var obj = {};
-      Array.from(tr.children).forEach((td, i) => {
-        var key = headers[i] || ("Col_"+i);
-        obj[key] = td.textContent.trim();
-      });
-      return obj;
-    });
-    return rows;
-  }catch(e){
-    console.error("Erro ao parsear pubhtml:", e);
-    return [];
-  }
-}
-// Reboot seguro: espera carregamento assíncrono se necessário, então inicializa
-(function(){
-  function boot(){
-    if (window.__asyncLoadPromise) {
-      window.__asyncLoadPromise.finally(function(){
-        if (!Array.isArray(allData) || allData.length === 0) {
-          showNoDataBanner();
-        }
-        safeInit();
-      });
-    } else {
-      if (!Array.isArray(allData) || allData.length === 0) {
-        showNoDataBanner();
+(function(){ // estoque helpers
+  function mesIndexBr(nome){
+    const mapa = {"Janeiro":1,"Fevereiro":2,"Março":3,"Abril":4,"Maio":5,"Junho":6,"Julho":7,"Agosto":8,"Setembro":9,"Outubro":10,"Novembro":11,"Dezembro":12};
+
+window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+  const base = (typeof allData!=="undefined" && Array.isArray(allData)) ? allData : [];
+  const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+  function estoqueAnoQtd(data, ano){
+    // Quando não há filtro de mês, pegar o último mês do ano com dados
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    
+    // Procura do último para o primeiro mês
+    for (let i = meses.length - 1; i >= 0; i--) {
+      const mesNome = meses[i];
+      const soma = data.filter(r => r["Ano"]==ano && r["Mês"]===mesNome).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+      if (soma > 0) {
+        return soma;
       }
-      safeInit();
+    }
+    return 0;
+  }
+  function estoqueMesesQtd(data, ano, mesesSelecionados){
+    const mesesOrdenados = mesesSelecionados.slice().sort((a,b)=>(window.__estoqueRules.mesIndexBr(a)||99)-(window.__estoqueRules.mesIndexBr(b)||99));
+    
+    if (mesesOrdenados.length === 1){
+      // 1 mês: pegar estoque DESSE mês
+      const mes = mesesOrdenados[0];
+      return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+    } else {
+      // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
+      const ultimoMes = mesesOrdenados[mesesOrdenados.length - 1];
+      const idxUltimo = window.__estoqueRules.mesIndexBr(ultimoMes);
+      const idxSubsequente = idxUltimo ? idxUltimo + 1 : null;
+      const mapaInv = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"};
+      
+      if (idxSubsequente && idxSubsequente <= 12) {
+        // Mês subsequente existe no mesmo ano
+        const mesSubsequente = mapaInv[idxSubsequente];
+        return data.filter(r => r["Ano"]==ano && r["Mês"]===mesSubsequente).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+      } else {
+        // Mês subsequente seria janeiro do ano seguinte
+        return data.filter(r => r["Ano"]==(ano+1) && r["Mês"]===mapaInv[1]).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+      }
     }
   }
-  function safeInit(){
-    try {
-      if (typeof initializeFilters === 'function') initializeFilters();
-      if (typeof updateDashboard === 'function') updateDashboard();
-      if (typeof updateCharts === 'function') setTimeout(updateCharts, 50);
-    } catch(e){ console.error("Falha ao iniciar dashboard:", e); }
-  }
-  function showNoDataBanner(){
-    if (document.getElementById('no-data-banner')) return;
-    var div = document.createElement('div');
-    div.id = 'no-data-banner';
-    div.style.cssText = "position:fixed;bottom:16px;right:16px;background:#fff3cd;color:#856404;border:1px solid #ffeeba;padding:10px 14px;border-radius:8px;z-index:9999;font-family:Inter,system-ui";
-    div.textContent = "⚠️ Nenhum dado carregado do CSV. Verifique o link e permissões.";
-    document.body.appendChild(div);
-    setTimeout(()=>{ if(div && div.parentNode) div.parentNode.removeChild(div); }, 7000);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
+
+  if (selectedAno){
+    if (selectedMeses && selectedMeses.length>=1){
+      return estoqueMesesQtd(data, selectedAno, selectedMeses);
+    } else {
+      return estoqueAnoQtd(data, selectedAno);
+    }
   } else {
-    boot();
+    const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
+    if (selectedMeses && selectedMeses.length>=1){
+      return anos.reduce((s,ano)=>s + estoqueMesesQtd(data, ano, selectedMeses), 0);
+    }
+    return anos.reduce((s,ano)=>s + estoqueAnoQtd(data, ano), 0);
   }
+};
+
+    return mapa[nome] || null;
+  }
+  function estoqueAno(data, ano){
+    // Quando não há filtro de mês, pegar o último mês do ano com dados
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    
+    // Procura do último para o primeiro mês
+    for (let i = meses.length - 1; i >= 0; i--) {
+      const mesNome = meses[i];
+      const soma = data.filter(r => r["Ano"]==ano && r["Mês"]===mesNome).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+      if (soma > 0) {
+        return soma;
+      }
+    }
+    return 0;
+  }
+  function estoqueMeses(data, ano, mesesSelecionados){
+    const mesesOrdenados = mesesSelecionados.slice().sort((a,b)=>(mesIndexBr(a)||99)-(mesIndexBr(b)||99));
+    
+    if (mesesOrdenados.length === 1){
+      // 1 mês: pegar estoque DESSE mês
+      const mes = mesesOrdenados[0];
+      return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+    } else {
+      // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
+      const ultimoMes = mesesOrdenados[mesesOrdenados.length - 1];
+      const idxUltimo = mesIndexBr(ultimoMes);
+      const idxSubsequente = idxUltimo ? idxUltimo + 1 : null;
+      const mapaInv = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"};
+      
+      if (idxSubsequente && idxSubsequente <= 12) {
+        // Mês subsequente existe no mesmo ano
+        const mesSubsequente = mapaInv[idxSubsequente];
+        return data.filter(r => r["Ano"]==ano && r["Mês"]===mesSubsequente).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+      } else {
+        // Mês subsequente seria janeiro do ano seguinte
+        return data.filter(r => r["Ano"]==(ano+1) && r["Mês"]===mapaInv[1]).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+      }
+    }
+  }
+  window.__estoqueRules = { estoqueAno, estoqueMeses, mesIndexBr };
 })();
+
+(function(){
+  window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const base = (typeof allData!=="undefined" && Array.isArray(allData)) ? allData : [];
+    const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+    if (selectedAno){
+      if (selectedMeses && selectedMeses.length>=1){
+        return window.__estoqueRules.estoqueMeses(data, selectedAno, selectedMeses);
+      } else {
+        return window.__estoqueRules.estoqueAno(data, selectedAno);
+      }
+    } else {
+      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
+      if (selectedMeses && selectedMeses.length>=1){
+        return anos.reduce((s,ano)=>s + window.__estoqueRules.estoqueMeses(data, ano, selectedMeses), 0);
+      }
+      return anos.reduce((s,ano)=>s + window.__estoqueRules.estoqueAno(data, ano), 0);
+    }
+  };
+})();
+
+// Exibir contador
+document.addEventListener('DOMContentLoaded', function(){
+  var b = document.getElementById('badgeLoaded');
+  b.textContent = allData && allData.length ? (allData.length + ' registros carregados') : '0 registros';
+  setTimeout(()=> b.remove(), 4000);
+});
 </script>
 <div class="container">
 <div class="header">
@@ -884,7 +871,6 @@ function parsePubHtmlToRows(htmlText){
 <button class="download-btn" onclick="downloadReport()">
                     💾 Baixar Relatório
                 </button>
-<button class="download-btn" onclick="window.location.reload(true)">🔄 Atualizar dados</button>
 </div>
 </div>
 <script>
@@ -1200,29 +1186,29 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
                         <div class="metric-bar-fill" style="width: ${Math.min(atingimentoMeta, 100)}%"></div>
                     </div>
                 </div>
-                <div class="metric-card">
-                    <div class="metric-label">Estoque VGV</div>
-                    <div class="metric-value currency">R$ ${formatMoney(estoqueVGV)}</div>
-                    <div class="metric-subtitle">Valor em estoque</div>
-                </div>
-                <div class="metric-card vso-ano">
-                    <div class="metric-label">VSO Geral</div>
-                    <div class="metric-value large">${vsoMedio.toFixed(1)}%</div>
-                    <div class="metric-subtitle">
-                        Vendas: R$ ${formatMoneyShort(realVGV)}<br>
-                        Estoque: R$ ${formatMoneyShort(estoqueVGV)}<br>
-                        <small style="opacity: 0.7;">
-                            ${selectedMeses.length === 0 
-                                ? 'Estoque: Último mês disponível' 
-                                : selectedMeses.length === 1
-                                ? 'Estoque: Do próprio mês'
-                                : 'Estoque: Mês subsequente ao período'}
-                        </small>
-                    </div>
-                    <div class="metric-bar">
-                        <div class="metric-bar-fill" style="width: ${Math.min(vsoMedio, 100)}%"></div>
-                    </div>
-                </div>
+<div class="metric-card">
+	                    <div class="metric-label">Estoque VGV</div>
+	                    <div class="metric-value large currency">R$ ${formatMoney(estoqueVGV)}</div>
+	                    <div class="metric-subtitle">Valor Geral de Vendas em Estoque</div>
+	                </div>
+	                <div class="metric-card vso-ano">
+	                    <div class="metric-label">VSO GERAL</div>
+	                    <div class="metric-value large">${(typeof getVsoGeralForFilters==='function' ? getVsoGeralForFilters(selectedAno, selectedMeses, extraFilterFn) * 100 : vsoMedio).toFixed(1)}%</div>
+	                    <div class="metric-subtitle">
+	                        Vendas: R$ ${formatMoneyShort(realVGV)}<br>
+	                        Estoque: R$ ${formatMoneyShort(estoqueVGV)}<br>
+	                        <small style="opacity: 0.7;">
+	                            ${selectedMeses.length === 0 
+	                                ? 'Estoque: Último mês disponível' 
+	                                : selectedMeses.length === 1
+	                                ? 'Estoque: Do próprio mês'
+	                                : 'Estoque: Mês subsequente ao período'}
+	                        </small>
+	                    </div>
+	                    <div class="metric-bar">
+	                        <div class="metric-bar-fill" style="width: ${Math.min((typeof getVsoGeralForFilters==='function' ? getVsoGeralForFilters(selectedAno, selectedMeses, extraFilterFn) * 100 : vsoMedio), 100)}%"></div>
+	                    </div>
+	                </div>
             `;
         }
 
@@ -2142,6 +2128,23 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
     setCard(/META VGV/i, metaSum);
     setCard(/REAL VGV/i, realSum);
     setCard(/ESTOQUE VGV/i, estoqueSum);
+
+    // Novo card VSO GERAL
+    if (typeof window.getVsoGeralForFilters === 'function'){
+      const vsoGeral = window.getVsoGeralForFilters(sel.Ano && sel.Ano.length===1 ? sel.Ano[0] : null, sel['Mês'], null);
+      setCard(/VSO GERAL/i, vsoGeral * 100.0); // Multiplica por 100 para porcentagem
+      // Ajuste para formatar como porcentagem
+      const card = cards.find(c => {
+        const lab = c.querySelector('.metric-label, .label, h3, h4, .card-title');
+        return lab && /VSO GERAL/i.test((lab.textContent||'').toUpperCase());
+      });
+      if (card){
+        const valEl = card.querySelector('.metric-value, .value, .card-value, strong, b, .number');
+        if (valEl){
+          valEl.textContent = (vsoGeral * 100.0).toFixed(2) + '%';
+        }
+      }
+    }
   }
 
   function schedule(){ clearTimeout(window.__headerFixTmr); window.__headerFixTmr = setTimeout(updateHeaderCards, 100); }
@@ -2551,6 +2554,52 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
   function ordMeses(arr){
     return arr.slice().sort((a,b)=>MESES.indexOf(a)-MESES.indexOf(b));
   }
+  window.getVsoGeralForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const base = Array.isArray(window.allData) ? window.allData : [];
+    const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+    
+    const realVGV = data.reduce((s,r)=> s + (+r[" Real VGV "]||0), 0);
+    
+    if (selectedMeses && selectedMeses.length>=1){
+      const ord = ordMeses(selectedMeses);
+      
+      if (ord.length === 1) {
+        // 1 mês: Venda / Estoque DESSE mês
+        const mes = ord[0];
+        const venda = data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mes)
+                          .reduce((s,r)=> s + (+r[" Real VGV "]||0), 0);
+        const estoque = data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mes)
+                           .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        return estoque > 0 ? (venda / estoque) : 0;
+      } else {
+        // Múltiplos meses: SOMA das Vendas / SOMA dos Estoques
+        const vendas = data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && ord.includes(r["Mês"]))
+                           .reduce((s,r)=> s + (+r[" Real VGV "]||0), 0);
+        const estoques = data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && ord.includes(r["Mês"]))
+                             .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        return estoques > 0 ? (vendas / estoques) : 0;
+      }
+    }
+    
+    // Sem filtro de mês: SOMA das Vendas / Estoque do Último Mês com Dados
+    let ultimoEstoque = 0;
+    if (selectedAno){
+      const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque VGV");
+      ultimoEstoque = soma;
+    } else {
+      const anosComDados = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
+      for (const ano of anosComDados) {
+        const {soma} = ultimoMesComInfoSum(data, ano, "Estoque VGV");
+        if (soma > 0) {
+          ultimoEstoque = soma;
+          break;
+        }
+      }
+    }
+    
+    return ultimoEstoque > 0 ? (realVGV / ultimoEstoque) : 0;
+  };
+
   window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
     const base = Array.isArray(window.allData) ? window.allData : [];
     const data = extraFilterFn ? base.filter(extraFilterFn) : base;
@@ -2636,14 +2685,11 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
             return data.filter(r => String(r["Ano"])===String(anoSeguinte) && r["Mês"]==="Janeiro")
                        .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
           } else {
-            // Sem ano filtrado: pegar o último estoque disponível (janeiro mais recente)
+            // Sem ano filtrado: pegar o estoque de janeiro do ano seguinte para o ano mais recente
             const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
-            for (const ano of anos) {
-              const estoque = data.filter(r => String(r["Ano"])===String(ano) && r["Mês"]==="Janeiro")
-                                  .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-              if (estoque > 0) return estoque;
-            }
-            return 0;
+            const anoMaisRecente = anos[0];
+            return data.filter(r => String(r["Ano"])===String(anoMaisRecente+1) && r["Mês"]==="Janeiro")
+                       .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
           }
         }
       }
@@ -2654,9 +2700,13 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque VGV");
       return soma;
     } else {
-      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
-      const total = anos.reduce((acc, ano)=> acc + ultimoMesComInfoSum(data, ano, "Estoque VGV").soma, 0);
-      return total;
+      // Sem filtro de mês: pegar o estoque do último mês com dados no ano mais recente.
+      const anosComDados = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
+      for (const ano of anosComDados) {
+        const {soma} = ultimoMesComInfoSum(data, ano, "Estoque VGV");
+        if (soma > 0) return soma;
+      }
+      return 0;
     }
   };
 })();
