@@ -2021,20 +2021,26 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         });
 
         // 2. Cálculo do Denominador (Estoque)
-        // Mês de início do trimestre (Estoque)
-        const mStart = qEstoque.start;
-        const eStart = (idx[emp][ano] && idx[emp][ano][mStart] && idx[emp][ano][mStart].estoque) || 0;
+        // Se há filtro de mês, somamos o estoque de todos os meses selecionados.
+        // Se não há filtro de mês, usamos a média do estoque do início e fim do trimestre (lógica original).
+        if (monthsSel.length) {
+          validMonths.forEach(m=>{
+            estoqueDenom += (idx[emp][ano][m].estoque || 0);
+          });
+        } else {
+          // Lógica original: (Estoque Mês Inicial + Estoque Mês Final) / 2
+          const mStart = qEstoque.start;
+          const eStart = (idx[emp][ano] && idx[emp][ano][mStart] && idx[emp][ano][mStart].estoque) || 0;
 
-        // Mês de fim do trimestre (Estoque)
-        let yEnd = ano;
-        let mEnd = qEstoque.end;
-        if (mEnd === 1) { // Caso do 4º Tri (Jan do próximo ano)
-          yEnd = ano + 1;
+          let yEnd = ano;
+          let mEnd = qEstoque.end;
+          if (mEnd === 1) { // Caso do 4º Tri (Jan do próximo ano)
+            yEnd = ano + 1;
+          }
+          const eEnd = (idx[emp][yEnd] && idx[emp][yEnd][mEnd] && idx[emp][yEnd][mEnd].estoque) || 0;
+
+          estoqueDenom += (eStart + eEnd) / 2;
         }
-        const eEnd = (idx[emp][yEnd] && idx[emp][yEnd][mEnd] && idx[emp][yEnd][mEnd].estoque) || 0;
-
-        // Fórmula: (Estoque Mês Inicial + Estoque Mês Final) / 2
-        estoqueDenom += (eStart + eEnd) / 2;
       });
     });
 
@@ -2068,16 +2074,22 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         });
 
         // 2. Cálculo do Denominador (Estoque)
-        // Mês de início (Estoque)
-        const mStart = ESTOQUE_MONTHS.start; // Janeiro
-        const eStart = (idx[emp][ano] && idx[emp][ano][mStart] && idx[emp][ano][mStart].estoque) || 0;
+        // Se há filtro de mês, somamos o estoque de todos os meses selecionados.
+        // Se não há filtro de mês, usamos a média do estoque do início e fim do ano (lógica original).
+        if (monthsSel.length) {
+          validMonths.forEach(m=>{
+            estoqueDenom += (idx[emp][ano][m].estoque || 0);
+          });
+        } else {
+          // Lógica original: (Estoque Janeiro + Estoque Outubro) / 2
+          const mStart = ESTOQUE_MONTHS.start; // Janeiro
+          const eStart = (idx[emp][ano] && idx[emp][ano][mStart] && idx[emp][ano][mStart].estoque) || 0;
 
-        // Mês de fim (Estoque)
-        const mEnd = ESTOQUE_MONTHS.end; // Outubro
-        const eEnd = (idx[emp][ano] && idx[emp][ano][mEnd] && idx[emp][ano][mEnd].estoque) || 0;
+          const mEnd = ESTOQUE_MONTHS.end; // Outubro
+          const eEnd = (idx[emp][ano] && idx[emp][ano][mEnd] && idx[emp][ano][mEnd].estoque) || 0;
 
-        // Fórmula: (Estoque Janeiro + Estoque Outubro) / 2
-        estoqueDenom += (eStart + eEnd) / 2;
+          estoqueDenom += (eStart + eEnd) / 2;
+        }
       });
     });
 
@@ -2134,32 +2146,9 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         }
       });
 
-      // Make ESTOQUE VGV card equal to denominator when months filtered
-      if (monthsSel.length){
-        const estoqueCard = Array.from(document.querySelectorAll('.metric-card, .card')).find(c=>{
-          const lab=c.querySelector('.metric-label, .label, h3, h4, .card-title');
-          return lab && /estoque\s*vgv/i.test(lab.textContent||'');
-        });
-        if (estoqueCard){
-          // compute denom anual/geral com mesma regra do trimestre selecionado (usar meses selecionados como conjunto corrente)
-          let denom=0;
-          Object.keys(idx).forEach(emp=>{
-            Object.keys(idx[emp]).map(x=>parseInt(x,10)).sort().forEach(ano=>{
-              const ms = monthsSel.filter(m=>idx[emp][ano] && idx[emp][ano][m]).sort((a,b)=>a-b);
-              if (!ms.length) return;
-              const mF=ms[0], mL=ms[ms.length-1];
-              const nxt = nextMonth(ano, mL);
-              const eFirst = (idx[emp][ano][mF] && idx[emp][ano][mF].estoque) || 0;
-              const eNext  = (idx[emp][nxt.y] && idx[emp][nxt.y][nxt.m] && idx[emp][nxt.y][nxt.m].estoque) || 0;
-              denom += (eFirst + eNext);
-            });
-          });
-          const vEl = estoqueCard.querySelector('.metric-value, .value, .card-value, strong, b, .number');
-          if (vEl) vEl.textContent = brlShort(denom);
-          const sEl = estoqueCard.querySelector('.metric-subtitle');
-          if (sEl) sEl.textContent = 'Valor em estoque (denominador do %VSO)';
-        }
-      }
+// O cálculo do Estoque VGV no cartão deve ser feito pela função `updateHeaderCards` ou similar,
+      // que deve usar `getEstoqueVGVForFilters` para garantir a lógica correta (mês individual ou soma de meses).
+      // Removendo o bloco de cálculo manual que estava sobrescrevendo o valor.
 
       // Abbreviate big numbers in header cards (META/REAL/ESTOQUE)
       (function abbreviateHeaderCards(){
