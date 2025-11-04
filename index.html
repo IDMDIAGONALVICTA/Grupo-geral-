@@ -2024,8 +2024,10 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         // Se há filtro de mês, somamos o estoque de todos os meses selecionados.
         // Se não há filtro de mês, usamos a média do estoque do início e fim do trimestre (lógica original).
         if (monthsSel.length) {
-          validMonths.forEach(m=>{
-            estoqueDenom += (idx[emp][ano][m].estoque || 0);
+          // A soma deve ser feita sobre os meses que estão no trimestre E foram selecionados
+          const mesesParaSomarEstoque = monthsSel.filter(m=>qMonths.includes(m));
+          mesesParaSomarEstoque.forEach(m=>{
+            estoqueDenom += (idx[emp][ano] && idx[emp][ano][m] && idx[emp][ano][m].estoque) || 0;
           });
         } else {
           // Lógica original: (Estoque Mês Inicial + Estoque Mês Final) / 2
@@ -2077,8 +2079,9 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         // Se há filtro de mês, somamos o estoque de todos os meses selecionados.
         // Se não há filtro de mês, usamos a média do estoque do início e fim do ano (lógica original).
         if (monthsSel.length) {
-          validMonths.forEach(m=>{
-            estoqueDenom += (idx[emp][ano][m].estoque || 0);
+          // A soma deve ser feita sobre os meses que foram selecionados
+          monthsSel.forEach(m=>{
+            estoqueDenom += (idx[emp][ano] && idx[emp][ano][m] && idx[emp][ano][m].estoque) || 0;
           });
         } else {
           // Lógica original: (Estoque Janeiro + Estoque Outubro) / 2
