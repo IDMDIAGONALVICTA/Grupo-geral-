@@ -2676,18 +2676,22 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         var idxEstoqueQtd = findIndexByName('estoque qtd');
 
         var denom = 0, numer = 0;
-        if (typeof window.getEstoqueVGVForFilters === 'function'){
-          denom = window.getEstoqueVGVForFilters(selectedAno, selectedMeses, extraFilterFn);
-        } else if (idxEstoqueVgv>=0) {
-          denom = sums[idxEstoqueVgv] || 0;
-        }
+        // O numerador (Venda Real) é sempre a soma dos valores da coluna 'Real VGV' ou 'Real Qtd'
         if (idxRealVgv>=0) {
           numer = sums[idxRealVgv] || 0;
-        } else if (idxRealQtd>=0 && typeof window.getEstoqueQtdForFilters === 'function'){
+        } else if (idxRealQtd>=0) {
           numer = sums[idxRealQtd] || 0;
-          if (!denom && typeof window.getEstoqueQtdForFilters === 'function'){
-            denom = window.getEstoqueQtdForFilters(selectedAno, selectedMeses, extraFilterFn);
-          }
+        }
+
+        // O denominador (Estoque) é obtido através das funções que já implementam a lógica de soma
+        if (headerNorm.indexOf('vgv') !== -1 && typeof window.getEstoqueVGVForFilters === 'function'){
+          denom = window.getEstoqueVGVForFilters(selectedAno, selectedMeses, extraFilterFn);
+        } else if (headerNorm.indexOf('qtd') !== -1 && typeof window.getEstoqueQtdForFilters === 'function'){
+          denom = window.getEstoqueQtdForFilters(selectedAno, selectedMeses, extraFilterFn);
+        } else if (idxEstoqueVgv>=0) {
+          denom = sums[idxEstoqueVgv] || 0;
+        } else if (idxEstoqueQtd>=0) {
+          denom = sums[idxEstoqueQtd] || 0;
         }
         var pct = (denom>0) ? (numer/denom)*100.0 : 0;
         td.textContent = pct.toFixed(2)+'%';
@@ -2783,7 +2787,17 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
     console.log('Total de registros após filtro:', data.length);
     
     if (selectedMeses && selectedMeses.length>=1){
-      // SOMA dos estoques de TODOS os meses selecionados
+      // Regra 1: Mês individual (Venda/Estoque)
+      if (selectedMeses.length === 1) {
+        const mes = selectedMeses[0];
+        const estoqueMes = data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mes)
+                     .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
+        console.log(`Estoque Qtd para o mês ${mes}: ${estoqueMes}`);
+        return estoqueMes;
+      }
+      
+      // Regra 2 e 3: Múltiplos meses ou Trimestre (SOMA Vendas/SOMA Estoques)
+      // Para o estoque, somamos o estoque de todos os meses selecionados.
       console.log('SOMANDO estoques Qtd de múltiplos meses');
       const ord = ordMeses(selectedMeses);
       let total = 0;
@@ -2818,8 +2832,18 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
     console.log('Total de registros após filtro:', data.length);
     
     if (selectedMeses && selectedMeses.length>=1){
-      // SOMA dos estoques de TODOS os meses selecionados
-      console.log('SOMANDO estoques de múltiplos meses');
+      // Regra 1: Mês individual (Venda/Estoque)
+      if (selectedMeses.length === 1) {
+        const mes = selectedMeses[0];
+        const estoqueMes = data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mes)
+                     .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        console.log(`Estoque VGV para o mês ${mes}: ${estoqueMes}`);
+        return estoqueMes;
+      }
+      
+      // Regra 2 e 3: Múltiplos meses ou Trimestre (SOMA Vendas/SOMA Estoques)
+      // Para o estoque, somamos o estoque de todos os meses selecionados.
+      console.log('SOMANDO estoques VGV de múltiplos meses');
       const ord = ordMeses(selectedMeses);
       let total = 0;
       for (const mes of ord) {
@@ -2828,7 +2852,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         console.log(`  ${mes}: ${estoqueMes}`);
         total += estoqueMes;
       }
-      console.log('Total de estoques somados:', total);
+      console.log('Total de estoques VGV somados:', total);
       return total;
     }
     if (selectedAno){
