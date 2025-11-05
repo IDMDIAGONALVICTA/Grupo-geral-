@@ -757,20 +757,8 @@ window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilte
       const mes = mesesOrdenados[0];
       return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
     } else {
-      // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
-      const ultimoMes = mesesOrdenados[mesesOrdenados.length - 1];
-      const idxUltimo = window.__estoqueRules.mesIndexBr(ultimoMes);
-      const idxSubsequente = idxUltimo ? idxUltimo + 1 : null;
-      const mapaInv = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"};
-      
-      if (idxSubsequente && idxSubsequente <= 12) {
-        // Mês subsequente existe no mesmo ano
-        const mesSubsequente = mapaInv[idxSubsequente];
-        return data.filter(r => r["Ano"]==ano && r["Mês"]===mesSubsequente).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
-      } else {
-        // Mês subsequente seria janeiro do ano seguinte
-        return data.filter(r => r["Ano"]==(ano+1) && r["Mês"]===mapaInv[1]).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
-      }
+      // Múltiplos meses: SOMAR estoques de TODOS os meses selecionados
+      return data.filter(r => r["Ano"]==ano && mesesOrdenados.includes(r["Mês"])).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
     }
   }
 
@@ -814,20 +802,8 @@ window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilte
       const mes = mesesOrdenados[0];
       return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
     } else {
-      // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
-      const ultimoMes = mesesOrdenados[mesesOrdenados.length - 1];
-      const idxUltimo = mesIndexBr(ultimoMes);
-      const idxSubsequente = idxUltimo ? idxUltimo + 1 : null;
-      const mapaInv = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"};
-      
-      if (idxSubsequente && idxSubsequente <= 12) {
-        // Mês subsequente existe no mesmo ano
-        const mesSubsequente = mapaInv[idxSubsequente];
-        return data.filter(r => r["Ano"]==ano && r["Mês"]===mesSubsequente).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
-      } else {
-        // Mês subsequente seria janeiro do ano seguinte
-        return data.filter(r => r["Ano"]==(ano+1) && r["Mês"]===mapaInv[1]).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
-      }
+      // Múltiplos meses: SOMAR estoques de TODOS os meses selecionados
+      return data.filter(r => r["Ano"]==ano && mesesOrdenados.includes(r["Mês"])).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
     }
   }
   window.__estoqueRules = { estoqueAno, estoqueMeses, mesIndexBr };
@@ -1136,6 +1112,10 @@ function toggleDebugPanel() {
             // Métricas básicas
             const metaVGV = data.reduce((sum, r) => sum + (r[' Meta VGV '] || 0), 0);
             const realVGV = data.reduce((sum, r) => sum + (r[' Real VGV '] || 0), 0);
+            
+            console.log(`[VENDAS DEBUG] Total de registros em data: ${data.length}`);
+            console.log(`[VENDAS DEBUG] Real VGV (soma de vendas): R$ ${(realVGV/1000000).toFixed(2)}M`);
+            
             const selectedAnoStrs = Array.from(selectedFilters.ano);
 const selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
 const selectedMeses = Array.from(selectedFilters.mes);
@@ -1163,7 +1143,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
                 const ultimoMes = mesesOrdenados[mesesOrdenados.length - 1];
                 const idxUltimo = MESES_ORD.indexOf(ultimoMes);
                 const mesSubsequente = idxUltimo < 11 ? MESES_ORD[idxUltimo + 1] : 'Janeiro do ano seguinte';
-                console.log('LÓGICA: Múltiplos meses → Estoque do mês subsequente (' + mesSubsequente + ')');
+                console.log('LÓGICA: Múltiplos meses → SOMA dos estoques de todos os meses selecionados');
             }
             console.log('Real VGV (Vendas):', realVGV.toFixed(2));
             console.log('Estoque VGV:', estoqueVGV.toFixed(2));
@@ -2574,29 +2554,16 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       if (ord.length === 1) {
         // 1 mês: pegar estoque DESSE mês
         const mes = ord[0];
-        return dadosFiltrados.filter(r => r["Mês"] === mes)
+        const estoque = dadosFiltrados.filter(r => r["Mês"] === mes)
                    .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
+        console.log(`[ESTOQUE QTD] 1 mês (${mes}): ${estoque}`);
+        return estoque;
       } else {
-        // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
-        const ultimoMes = ord[ord.length - 1];
-        const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-        const idxUltimo = MESES.indexOf(ultimoMes);
-        const idxSubsequente = idxUltimo + 1;
-        
-        if (idxSubsequente < 12) {
-          const mesSubsequente = MESES[idxSubsequente];
-          return dadosFiltrados.filter(r => r["Mês"] === mesSubsequente)
-                     .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
-        } else {
-          // Janeiro do ano seguinte
-          const anoSeguinte = selectedAno ? selectedAno + 1 : null;
-          if (anoSeguinte) {
-            return base.filter(r => String(r["Ano"]) === String(anoSeguinte) && r["Mês"] === "Janeiro")
-                       .filter(extraFilterFn || (()=>true))
-                       .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
-          }
-          return 0;
-        }
+        // Múltiplos meses: SOMAR estoques de TODOS os meses filtrados
+        const estoque = dadosFiltrados.filter(r => ord.includes(r["Mês"]))
+                   .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
+        console.log(`[ESTOQUE QTD] ${ord.length} meses (${ord.join(', ')}): SOMA de estoques = ${estoque}`);
+        return estoque;
       }
     }
     
@@ -2635,11 +2602,10 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       
       if (ultimoMes) {
         estoqueTotal += mesesDoProduto[ultimoMes];
-        console.log(`[ESTOQUE QTD] ${chave} - Último mês: ${ultimoMes}, Estoque: ${mesesDoProduto[ultimoMes]}`);
       }
     });
     
-    console.log(`[ESTOQUE QTD] Total: ${estoqueTotal}`);
+    console.log(`[ESTOQUE QTD] Sem filtro de mês - Total (último mês de cada produto): ${estoqueTotal}`);
     return estoqueTotal;
   };
   window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
@@ -2657,29 +2623,27 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       if (ord.length === 1) {
         // 1 mês: pegar estoque DESSE mês
         const mes = ord[0];
-        return dadosFiltrados.filter(r => r["Mês"] === mes)
+        const estoque = dadosFiltrados.filter(r => r["Mês"] === mes)
                    .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        console.log(`[ESTOQUE VGV] 1 mês (${mes}): R$ ${(estoque/1000000).toFixed(2)}M`);
+        return estoque;
       } else {
-        // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
-        const ultimoMes = ord[ord.length - 1];
-        const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-        const idxUltimo = MESES.indexOf(ultimoMes);
-        const idxSubsequente = idxUltimo + 1;
+        // Múltiplos meses: SOMAR estoques de TODOS os meses filtrados
+        console.log(`[ESTOQUE VGV DEBUG] Múltiplos meses: ${ord.join(', ')}`);
+        console.log(`[ESTOQUE VGV DEBUG] Total de registros em dadosFiltrados: ${dadosFiltrados.length}`);
         
-        if (idxSubsequente < 12) {
-          const mesSubsequente = MESES[idxSubsequente];
-          return dadosFiltrados.filter(r => r["Mês"] === mesSubsequente)
-                     .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-        } else {
-          // Janeiro do ano seguinte
-          const anoSeguinte = selectedAno ? selectedAno + 1 : null;
-          if (anoSeguinte) {
-            return base.filter(r => String(r["Ano"]) === String(anoSeguinte) && r["Mês"] === "Janeiro")
-                       .filter(extraFilterFn || (()=>true))
-                       .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-          }
-          return 0;
-        }
+        const registrosPorMes = {};
+        ord.forEach(m => {
+          const regs = dadosFiltrados.filter(r => r["Mês"] === m);
+          const estoqueDoMes = regs.reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+          registrosPorMes[m] = {count: regs.length, estoque: estoqueDoMes};
+          console.log(`[ESTOQUE VGV DEBUG] ${m}: ${regs.length} registros, Estoque = R$ ${(estoqueDoMes/1000000).toFixed(2)}M`);
+        });
+        
+        const estoque = dadosFiltrados.filter(r => ord.includes(r["Mês"]))
+                   .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        console.log(`[ESTOQUE VGV] ${ord.length} meses: SOMA total = R$ ${(estoque/1000000).toFixed(2)}M`);
+        return estoque;
       }
     }
     
