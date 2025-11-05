@@ -1007,11 +1007,6 @@ function toggleDebugPanel() {
         }
 
         function updateMetrics(data) {
-            const updateId = Math.random().toString(36).substr(2, 9);
-            console.log(`[UPDATE METRICS ${updateId}] === INICIANDO ATUALIZAÇÃO ===`);
-            console.log(`[UPDATE METRICS ${updateId}] Timestamp:`, new Date().toISOString());
-            console.log(`[UPDATE METRICS ${updateId}] Stack trace:`, new Error().stack);
-            
             // Métricas básicas
             const metaVGV = data.reduce((sum, r) => sum + (r[' Meta VGV '] || 0), 0);
             const realVGV = data.reduce((sum, r) => sum + (r[' Real VGV '] || 0), 0);
@@ -1058,12 +1053,12 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
             document.getElementById('metricsGrid').innerHTML = `
                 <div class="metric-card">
                     <div class="metric-label">Meta VGV</div>
-                    <div class="metric-value currency">R$ ${formatMoney(metaVGV)}</div>
+                    <div class="metric-value currency">R$ ${formatMoneyMi(metaVGV)}</div>
                     <div class="metric-subtitle">Valor planejado</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Real VGV</div>
-                    <div class="metric-value currency">R$ ${formatMoney(realVGV)}</div>
+                    <div class="metric-value currency">R$ ${formatMoneyMi(realVGV)}</div>
                     <div class="metric-subtitle">${atingimentoMeta.toFixed(1)}% da meta</div>
                     <div class="metric-bar">
                         <div class="metric-bar-fill" style="width: ${Math.min(atingimentoMeta, 100)}%"></div>
@@ -1071,7 +1066,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Estoque VGV</div>
-                    <div class="metric-value currency">R$ ${formatMoney(estoqueVGV)}</div>
+                    <div class="metric-value currency">R$ ${formatMoneyMi(estoqueVGV)}</div>
                     <div class="metric-subtitle">Valor em estoque</div>
                 </div>
                 <div class="metric-card vso-ano">
@@ -1093,9 +1088,6 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
                     </div>
                 </div>
             `;
-            
-            console.log(`[UPDATE METRICS ${updateId}] === FIM DA ATUALIZAÇÃO ===`);
-            console.log(`[UPDATE METRICS ${updateId}] Valores finais - Meta: R$`, metaVGV.toLocaleString('pt-BR'), 'Real: R$', realVGV.toLocaleString('pt-BR'), 'Estoque: R$', estoqueVGV.toLocaleString('pt-BR'));
         }
 
         function updateAnalysis(data) {
@@ -1370,7 +1362,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return context.dataset.label + ': R$ ' + formatMoney(context.parsed.y);
+                                    return context.dataset.label + ': R$ ' + formatMoneyShort(context.parsed.y);
                                 }
                             }
                         }
@@ -1525,14 +1517,27 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
             return new Intl.NumberFormat('pt-BR', {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0
-            }).format(value);
+            })
+        function formatMoneyMi(value, decimals = 1) {
+            const v = (Number(value) || 0) / 1e6;
+            return new Intl.NumberFormat('pt-BR', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            }).format(v) + ' mi';
+        }
+    .format(value);
         }
 
+        
         function formatMoneyShort(value) {
+            // Sempre em milhões (fixo), 1 casa
+            const v = (Number(value) || 0) / 1e6;
             return new Intl.NumberFormat('pt-BR', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0
-            }).format(value);
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1
+            }).format(v) + ' mi';
+        }
+    ).format(value);
         }
 
         function downloadReport() {
@@ -1807,8 +1812,32 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         }
       });
 
-      // Código que sobrescrevia ESTOQUE VGV com lógica incorreta foi removido
-      // Agora o card de ESTOQUE VGV é atualizado apenas por updateMetrics com a lógica correta
+      // Make ESTOQUE VGV card equal to denominator when months filtered
+      if (monthsSel.length){
+        const estoqueCard = Array.from(document.querySelectorAll('.metric-card, .card')).find(c=>{
+          const lab=c.querySelector('.metric-label, .label, h3, h4, .card-title');
+          return lab && /estoque\s*vgv/i.test(lab.textContent||'');
+        });
+        if (estoqueCard){
+          // compute denom anual/geral com mesma regra do trimestre selecionado (usar meses selecionados como conjunto corrente)
+          let denom=0;
+          Object.keys(idx).forEach(emp=>{
+            Object.keys(idx[emp]).map(x=>parseInt(x,10)).sort().forEach(ano=>{
+              const ms = monthsSel.filter(m=>idx[emp][ano] && idx[emp][ano][m]).sort((a,b)=>a-b);
+              if (!ms.length) return;
+              const mF=ms[0], mL=ms[ms.length-1];
+              const nxt = nextMonth(ano, mL);
+              const eFirst = (idx[emp][ano][mF] && idx[emp][ano][mF].estoque) || 0;
+              const eNext  = (idx[emp][nxt.y] && idx[emp][nxt.y][nxt.m] && idx[emp][nxt.y][nxt.m].estoque) || 0;
+              denom += (eFirst + eNext);
+            });
+          });
+          const vEl = estoqueCard.querySelector('.metric-value, .value, .card-value, strong, b, .number');
+          if (vEl) vEl.textContent = brlShort(denom);
+          const sEl = estoqueCard.querySelector('.metric-subtitle');
+          if (sEl) sEl.textContent = 'Valor em estoque (denominador do %VSO)';
+        }
+      }
 
       // Abbreviate big numbers in header cards (META/REAL/ESTOQUE)
       // Função de abreviação desabilitada para evitar loops de re-renderização
@@ -1839,17 +1868,12 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
     }catch(e){ console.error('vso master error', e); }
   }
 
-  function schedule(){ 
-    // Função updateAll desabilitada - updateMetrics é responsável por todas as atualizações
-    // clearTimeout(window.__vsoMasterTmr); 
-    // window.__vsoMasterTmr = setTimeout(updateAll, 100); 
-  }
-  // Event listeners desabilitados - apenas updateDashboard controla atualizações
-  // if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', schedule); } else { schedule(); }
-  // document.addEventListener('filters:changed', schedule);
-  // const root = document.querySelector('.filters-grid') || document;
-  // root.addEventListener('click', schedule, true);
-  // root.addEventListener('change', schedule, true);
+  function schedule(){ clearTimeout(window.__vsoMasterTmr); window.__vsoMasterTmr = setTimeout(updateAll, 100); }
+  if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', schedule); } else { schedule(); }
+  document.addEventListener('filters:changed', schedule);
+  const root = document.querySelector('.filters-grid') || document;
+  root.addEventListener('click', schedule, true);
+  root.addEventListener('change', schedule, true);
   // MutationObserver desabilitado para evitar loop infinito
   // const mo = new MutationObserver(schedule);
   // mo.observe(document.body, { subtree:true, childList:true, characterData:true });
