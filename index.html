@@ -727,6 +727,108 @@ var allData = [];
 })();
 
 
+(function(){ // estoque helpers
+  function mesIndexBr(nome){
+    const mapa = {"Janeiro":1,"Fevereiro":2,"Março":3,"Abril":4,"Maio":5,"Junho":6,"Julho":7,"Agosto":8,"Setembro":9,"Outubro":10,"Novembro":11,"Dezembro":12};
+
+window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+  const base = (typeof allData!=="undefined" && Array.isArray(allData)) ? allData : [];
+  const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+  function estoqueAnoQtd(data, ano){
+    // Quando não há filtro de mês, pegar o último mês do ano com dados
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    
+    // Procura do último para o primeiro mês
+    for (let i = meses.length - 1; i >= 0; i--) {
+      const mesNome = meses[i];
+      const soma = data.filter(r => r["Ano"]==ano && r["Mês"]===mesNome).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+      if (soma > 0) {
+        return soma;
+      }
+    }
+    return 0;
+  }
+  function estoqueMesesQtd(data, ano, mesesSelecionados){
+    const mesesOrdenados = mesesSelecionados.slice().sort((a,b)=>(window.__estoqueRules.mesIndexBr(a)||99)-(window.__estoqueRules.mesIndexBr(b)||99));
+    
+    if (mesesOrdenados.length === 1){
+      // 1 mês: pegar estoque DESSE mês
+      const mes = mesesOrdenados[0];
+      return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+    } else {
+      // Múltiplos meses: SOMAR estoques de TODOS os meses selecionados
+      return data.filter(r => r["Ano"]==ano && mesesOrdenados.includes(r["Mês"])).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+    }
+  }
+
+  if (selectedAno){
+    if (selectedMeses && selectedMeses.length>=1){
+      return estoqueMesesQtd(data, selectedAno, selectedMeses);
+    } else {
+      return estoqueAnoQtd(data, selectedAno);
+    }
+  } else {
+    const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
+    if (selectedMeses && selectedMeses.length>=1){
+      return anos.reduce((s,ano)=>s + estoqueMesesQtd(data, ano, selectedMeses), 0);
+    }
+    return anos.reduce((s,ano)=>s + estoqueAnoQtd(data, ano), 0);
+  }
+};
+
+    return mapa[nome] || null;
+  }
+  function estoqueAno(data, ano){
+    // Quando não há filtro de mês, pegar o último mês do ano com dados
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    
+    // Procura do último para o primeiro mês
+    for (let i = meses.length - 1; i >= 0; i--) {
+      const mesNome = meses[i];
+      const soma = data.filter(r => r["Ano"]==ano && r["Mês"]===mesNome).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+      if (soma > 0) {
+        return soma;
+      }
+    }
+    return 0;
+  }
+  function estoqueMeses(data, ano, mesesSelecionados){
+    const mesesOrdenados = mesesSelecionados.slice().sort((a,b)=>(mesIndexBr(a)||99)-(mesIndexBr(b)||99));
+    
+    if (mesesOrdenados.length === 1){
+      // 1 mês: pegar estoque DESSE mês
+      const mes = mesesOrdenados[0];
+      return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+    } else {
+      // Múltiplos meses: SOMAR estoques de TODOS os meses selecionados
+      return data.filter(r => r["Ano"]==ano && mesesOrdenados.includes(r["Mês"])).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+    }
+  }
+  window.__estoqueRules = { estoqueAno, estoqueMeses, mesIndexBr };
+})();
+
+(function(){
+  window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const base = (typeof allData!=="undefined" && Array.isArray(allData)) ? allData : [];
+    const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+    if (selectedAno){
+      if (selectedMeses && selectedMeses.length>=1){
+        return window.__estoqueRules.estoqueMeses(data, selectedAno, selectedMeses);
+      } else {
+        return window.__estoqueRules.estoqueAno(data, selectedAno);
+      }
+    } else {
+      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
+      if (selectedMeses && selectedMeses.length>=1){
+        return anos.reduce((s,ano)=>s + window.__estoqueRules.estoqueMeses(data, ano, selectedMeses), 0);
+      }
+      return anos.reduce((s,ano)=>s + window.__estoqueRules.estoqueAno(data, ano), 0);
+    }
+  };
+})();
+
 // Exibir contador
 document.addEventListener('DOMContentLoaded', function(){
   var b = document.getElementById('badgeLoaded');
@@ -1010,10 +1112,6 @@ function toggleDebugPanel() {
             // Métricas básicas
             const metaVGV = data.reduce((sum, r) => sum + (r[' Meta VGV '] || 0), 0);
             const realVGV = data.reduce((sum, r) => sum + (r[' Real VGV '] || 0), 0);
-            
-            console.log(`[VENDAS DEBUG] Total de registros em data: ${data.length}`);
-            console.log(`[VENDAS DEBUG] Real VGV (soma de vendas): R$ ${realVGV.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
-            
             const selectedAnoStrs = Array.from(selectedFilters.ano);
 const selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
 const selectedMeses = Array.from(selectedFilters.mes);
@@ -1521,10 +1619,12 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         }
 
         function formatMoneyShort(value) {
-            return new Intl.NumberFormat('pt-BR', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0
-            }).format(value);
+            if (value >= 1000000) {
+                return (value / 1000000).toFixed(1) + 'M';
+            } else if (value >= 1000) {
+                return (value / 1000).toFixed(1) + 'K';
+            }
+            return value.toFixed(0);
         }
 
         function downloadReport() {
@@ -1584,6 +1684,10 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
   function percentBR(p){ try{ return new Intl.NumberFormat('pt-BR',{style:'percent',maximumFractionDigits:1}).format(p); }catch(e){ return (p*100).toFixed(1).replace('.',',')+'%'; } }
   function brlShort(n){
     const v = Number(n)||0;
+    if (Math.abs(v) >= 1e6){
+      try { return 'R$ ' + (v/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1}) + 'M'; }
+      catch(e){ return 'R$ ' + (Math.round(v/1e5)/10).toString().replace('.',',') + 'M'; }
+    }
     try { return 'R$ ' + v.toLocaleString('pt-BR', { maximumFractionDigits: 0 }); }
     catch(e){ return 'R$ ' + String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
   }
@@ -1827,30 +1931,28 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       }
 
       // Abbreviate big numbers in header cards (META/REAL/ESTOQUE)
-      // Função de abreviação desabilitada para evitar loops de re-renderização
-      // (function abbreviateHeaderCards(){
-      //   const cards = Array.from(document.querySelectorAll('.metric-card, .card'));
-      //   cards.forEach(card=>{
-      //     const labelEl = card.querySelector('.metric-label, .label, h3, h4, .card-title');
-      //     const label = labelEl ? (labelEl.textContent||'').toUpperCase() : '';
-      //     if (!/META VGV|REAL VGV|ESTOQUE VGV/.test(label)) return;
-      //     const valEl = card.querySelector('.metric-value, .value, .card-value, strong, b, .number');
-      //     if (!valEl) return;
-      //     // Try to read number in the same element or in siblings
-      //     const txt = valEl.textContent || '';
-      //     const m = txt.replace(/\s/g,'').match(/(\d{1,3}(?:\.\d{3}){2,}(?:,\d+)?)/);
-      //     if (m){
-      //       // parse BR number
-      //       let s = m[1];
-      //       if (s.indexOf(',')>=0){ s = s.replace(/\./g,'').replace(',','.'); }
-      //       const n = parseFloat(s);
-      //       if (!isNaN(n)){
-      //         valEl.textContent = 'R$ ' + n.toLocaleString('pt-BR',{maximumFractionDigits:0});
-      //       }
-      //     }
-      //   });
-      // })();
-
+      (function abbreviateHeaderCards(){
+        const cards = Array.from(document.querySelectorAll('.metric-card, .card'));
+        cards.forEach(card=>{
+          const labelEl = card.querySelector('.metric-label, .label, h3, h4, .card-title');
+          const label = labelEl ? (labelEl.textContent||'').toUpperCase() : '';
+          if (!/META VGV|REAL VGV|ESTOQUE VGV/.test(label)) return;
+          const valEl = card.querySelector('.metric-value, .value, .card-value, strong, b, .number');
+          if (!valEl) return;
+          // Try to read number in the same element or in siblings
+          const txt = valEl.textContent || '';
+          const m = txt.replace(/\s/g,'').match(/(\d{1,3}(?:\.\d{3}){2,}(?:,\d+)?)/);
+          if (m){
+            // parse BR number
+            let s = m[1];
+            if (s.indexOf(',')>=0){ s = s.replace(/\./g,'').replace(',','.'); }
+            const n = parseFloat(s);
+            if (!isNaN(n) && Math.abs(n)>=1e6){
+              valEl.textContent = 'R$ ' + (n/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1}) + 'M';
+            }
+          }
+        });
+      })();
 
     }catch(e){ console.error('vso master error', e); }
   }
@@ -1861,15 +1963,159 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
   const root = document.querySelector('.filters-grid') || document;
   root.addEventListener('click', schedule, true);
   root.addEventListener('change', schedule, true);
-  // MutationObserver desabilitado para evitar loop infinito
-  // const mo = new MutationObserver(schedule);
-  // mo.observe(document.body, { subtree:true, childList:true, characterData:true });
+  const mo = new MutationObserver(schedule);
+  mo.observe(document.body, { subtree:true, childList:true, characterData:true });
 })();
 </script>
-<!-- Script duplicado removido - lógica de estoque agora está apenas em updateMetrics -->
+<!-- INJETADO POR CHATGPT: ABREVIAÇÃO SEGURA (pt-BR) E CORREÇÃO DOS CARDS META/REAL/ESTOQUE -->
 <script>
-// Script placeholder removido
+(function(){
+  if (window.__headerCardsFixInstalled) return; window.__headerCardsFixInstalled = true;
 
+  const MES2NUM = {"Janeiro":1,"Fevereiro":2,"Março":3,"Abril":4,"Maio":5,"Junho":6,"Julho":7,"Agosto":8,"Setembro":9,"Outubro":10,"Novembro":11,"Dezembro":12};
+  function norm(t){ return (t||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim(); }
+  function nextMonth(y,m){ return (m===12)?{y:y+1,m:1}:{y:y,m:m+1}; }
+
+  function brlShort(n){
+    const v = Number(n)||0;
+    if (Math.abs(v) >= 1e6){
+      try { return (v/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1}) + 'M'; }
+      catch(e){ return (Math.round(v/1e5)/10).toString().replace('.',',') + 'M'; }
+    }
+    try { return (v).toLocaleString('pt-BR',{maximumFractionDigits:0}); }
+    catch(e){ return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
+  }
+
+  function getSelectedFilters(){
+    const out = {};
+    document.querySelectorAll('.filter-group').forEach(g=>{
+      const lab = g.querySelector('.filter-label'); if (!lab) return;
+      const t = norm(lab.textContent||'');
+      let key=null;
+      if (t.includes('empresa')) key='Empresa';
+      else if (t.includes('mês')||t.includes('mes')) key='Mês';
+      else if (t.includes('ano')) key='Ano';
+      else if (t.includes('linha')) key='Linha de Produto';
+      else if (t.includes('produto')) key='Produto';
+      if (!key) return;
+      const vals=[];
+      g.querySelectorAll('.picklist-dropdown input[type="checkbox"]').forEach(ch=>{
+        if (ch.checked){
+          const opt=ch.closest('.picklist-option'); const txt=opt?opt.textContent:'';
+          if (txt) vals.push(txt.replace(/\s+/g,' ').trim());
+        }
+      });
+      if (!vals.length){
+        g.querySelectorAll('.picklist-option.selected').forEach(opt=>{
+          const txt = opt?opt.textContent:'';
+          if (txt) vals.push(txt.replace(/\s+/g,' ').trim());
+        });
+      }
+      if (!vals.length) return;
+      if (key==='Ano'){ out[key]=vals.map(v=>parseInt(v.replace(/\D/g,''),10)).filter(n=>!isNaN(n)); }
+      else { out[key]=vals; }
+    });
+    return out;
+  }
+
+  function applyFilters(data, sel){
+    if (!sel || !Object.keys(sel).length) return data.slice();
+    return data.filter(d=>{
+      for (const k in sel){
+        if (k==='Ano'){ if (!sel[k].includes(Number(d[k])||0)) return false; }
+        else { if (!sel[k].includes(String(d[k]))) return false; }
+      }
+      return true;
+    });
+  }
+
+  function selMonthsNums(sel){ const arr = sel&&sel['Mês']?sel['Mês']:[]; return arr.map(nm=>MES2NUM[nm]).filter(Boolean); }
+
+  function idxEmpresa(data){
+    const idx={};
+    data.forEach(d=>{
+      const emp = String(d['Empresa']||'').trim();
+      const ano = Number(d['Ano'])||0;
+      const m = MES2NUM[d['Mês']]||0;
+      if (!emp||!ano||!m) return;
+      idx[emp]=idx[emp]||{};
+      idx[emp][ano]=idx[emp][ano]||{};
+      idx[emp][ano][m]=idx[emp][ano][m]||{real:0, estoque:0, meta:0};
+      idx[emp][ano][m].real += (Number(d[' Real VGV '])||0);
+      idx[emp][ano][m].estoque += (Number(d['Estoque VGV'])||0);
+      idx[emp][ano][m].meta += (Number(d[' Meta VGV '])||0);
+    });
+    return idx;
+  }
+
+  function computeEstoqueDenom(idx, monthsSel){
+    // Estoque para exibir quando meses estão filtrados: 1º mês + seguinte ao último (por empresa/ano), somado
+    let estoque=0;
+    Object.keys(idx).forEach(emp=>{
+      Object.keys(idx[emp]).map(x=>parseInt(x,10)).sort().forEach(ano=>{
+        const ms = monthsSel.filter(m=>idx[emp][ano] && idx[emp][ano][m]).sort((a,b)=>a-b);
+        if (!ms.length) return;
+        const mF=ms[0], mL=ms[ms.length-1];
+        const nxt = nextMonth(ano, mL);
+        const eFirst = (idx[emp][ano][mF] && idx[emp][ano][mF].estoque) || 0;
+        const eNext  = (idx[emp][nxt.y] && idx[emp][nxt.y][nxt.m] && idx[emp][nxt.y][nxt.m].estoque) || 0;
+        estoque += (eFirst + eNext);
+      });
+    });
+    return estoque;
+  }
+
+  function sumByKey(data, key){
+    return data.reduce((s,d)=> s + (Number(d[key])||0), 0);
+  }
+
+  function updateHeaderCards(){
+    if (typeof allData === 'undefined') return;
+    const sel = getSelectedFilters();
+    const filtered = applyFilters(allData, sel);
+    const monthsSel = selMonthsNums(sel);
+    const idx = idxEmpresa(filtered);
+
+    const metaSum = sumByKey(filtered, ' Meta VGV ');
+    const realSum = sumByKey(filtered, ' Real VGV ');
+    let estoqueSum;
+
+    if (monthsSel.length){
+      estoqueSum = computeEstoqueDenom(idx, monthsSel);
+    } else {
+      // Visão inicial: mostrar estoque agregado do dataset filtrado
+      estoqueSum = sumByKey(filtered, 'Estoque VGV');
+    }
+
+    // Atualiza os 3 cards
+    const cards = Array.from(document.querySelectorAll('.metric-card, .card'));
+    function setCard(labelRegex, value){
+      const card = cards.find(c => {
+        const lab = c.querySelector('.metric-label, .label, h3, h4, .card-title');
+        return lab && labelRegex.test((lab.textContent||'').toUpperCase());
+      });
+      if (!card) return;
+      const valEl = card.querySelector('.metric-value, .value, .card-value, strong, b, .number');
+      if (valEl){
+        // NÃO prefixar "R$" aqui: o layout já tem o "R$" separado
+        valEl.textContent = brlShort(value);
+      }
+    }
+    setCard(/META VGV/i, metaSum);
+    setCard(/REAL VGV/i, realSum);
+    setCard(/ESTOQUE VGV/i, estoqueSum);
+  }
+
+  function schedule(){ clearTimeout(window.__headerFixTmr); window.__headerFixTmr = setTimeout(updateHeaderCards, 100); }
+
+  if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', schedule); } else { schedule(); }
+  document.addEventListener('filters:changed', schedule);
+  const root = document.querySelector('.filters-grid') || document;
+  root.addEventListener('click', schedule, true);
+  root.addEventListener('change', schedule, true);
+  const mo = new MutationObserver(schedule);
+  mo.observe(document.body, { subtree:true, childList:true, characterData:true });
+})();
 </script>
 <script>
 (function() {
@@ -2375,24 +2621,13 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         const mes = ord[0];
         const estoque = dadosFiltrados.filter(r => r["Mês"] === mes)
                    .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-        console.log(`[ESTOQUE VGV] 1 mês (${mes}): R$ ${estoque.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
+        console.log(`[ESTOQUE VGV] 1 mês (${mes}): R$ ${(estoque/1000000).toFixed(2)}M`);
         return estoque;
       } else {
         // Múltiplos meses: SOMAR estoques de TODOS os meses filtrados
-        console.log(`[ESTOQUE VGV DEBUG] Múltiplos meses: ${ord.join(', ')}`);
-        console.log(`[ESTOQUE VGV DEBUG] Total de registros em dadosFiltrados: ${dadosFiltrados.length}`);
-        
-        const registrosPorMes = {};
-        ord.forEach(m => {
-          const regs = dadosFiltrados.filter(r => r["Mês"] === m);
-          const estoqueDoMes = regs.reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-          registrosPorMes[m] = {count: regs.length, estoque: estoqueDoMes};
-          console.log(`[ESTOQUE VGV DEBUG] ${m}: ${regs.length} registros, Estoque = R$ ${estoqueDoMes.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
-        });
-        
         const estoque = dadosFiltrados.filter(r => ord.includes(r["Mês"]))
                    .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-        console.log(`[ESTOQUE VGV] ${ord.length} meses: SOMA total = R$ ${estoque.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
+        console.log(`[ESTOQUE VGV] ${ord.length} meses (${ord.join(', ')}): SOMA de estoques = R$ ${(estoque/1000000).toFixed(2)}M`);
         return estoque;
       }
     }
@@ -2432,10 +2667,11 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       
       if (ultimoMes) {
         estoqueTotal += mesesDoProduto[ultimoMes];
+        console.log(`[ESTOQUE VGV] ${chave} - Último mês: ${ultimoMes}, Estoque: R$ ${(mesesDoProduto[ultimoMes]/1000000).toFixed(2)}M`);
       }
     });
     
-    console.log(`[ESTOQUE VGV] Sem filtro de mês - Total: R$ ${estoqueTotal.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
+    console.log(`[ESTOQUE VGV] Total: R$ ${(estoqueTotal/1000000).toFixed(2)}M`);
     return estoqueTotal;
   };
 })();
