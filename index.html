@@ -2563,13 +2563,18 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
     const base = Array.isArray(window.allData) ? window.allData : [];
     const data = extraFilterFn ? base.filter(extraFilterFn) : base;
     
-    if (selectedMeses && selectedMeses.length>=1){
+    // Filtrar por ano se especificado
+    const dadosFiltrados = selectedAno 
+      ? data.filter(r => String(r["Ano"]) === String(selectedAno))
+      : data;
+    
+    if (selectedMeses && selectedMeses.length >= 1){
       const ord = ordMeses(selectedMeses);
       
       if (ord.length === 1) {
         // 1 mês: pegar estoque DESSE mês
         const mes = ord[0];
-        return data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mes)
+        return dadosFiltrados.filter(r => r["Mês"] === mes)
                    .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
       } else {
         // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
@@ -2579,93 +2584,80 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         const idxSubsequente = idxUltimo + 1;
         
         if (idxSubsequente < 12) {
-          // Mês subsequente existe no mesmo ano
           const mesSubsequente = MESES[idxSubsequente];
-          return data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mesSubsequente)
+          return dadosFiltrados.filter(r => r["Mês"] === mesSubsequente)
                      .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
         } else {
-          // Mês subsequente seria janeiro do ano seguinte
-          if (selectedAno) {
-            const anoSeguinte = selectedAno + 1;
-            return data.filter(r => String(r["Ano"])===String(anoSeguinte) && r["Mês"]==="Janeiro")
+          // Janeiro do ano seguinte
+          const anoSeguinte = selectedAno ? selectedAno + 1 : null;
+          if (anoSeguinte) {
+            return base.filter(r => String(r["Ano"]) === String(anoSeguinte) && r["Mês"] === "Janeiro")
+                       .filter(extraFilterFn || (()=>true))
                        .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
-          } else {
-            // Sem ano filtrado: pegar o último estoque disponível (janeiro mais recente)
-            const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
-            for (const ano of anos) {
-              const estoque = data.filter(r => String(r["Ano"])===String(ano) && r["Mês"]==="Janeiro")
-                                  .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
-              if (estoque > 0) return estoque;
-            }
-            return 0;
           }
+          return 0;
         }
       }
     }
     
-    // Sem filtro de mês: calcular estoque por produto (último mês de cada produto)
-    // Agrupar por produto
-    const produtosMap = {};
-    data.forEach(r => {
-      const key = `${r.Empresa}|${r['Linha de Produto']}|${r.Produto}`;
-      if (!produtosMap[key]) {
-        produtosMap[key] = {
-          empresa: r.Empresa,
-          linha: r['Linha de Produto'],
-          produto: r.Produto,
-          registros: []
-        };
+    // Sem filtro de mês: pegar o último mês disponível de cada produto
+    const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+    
+    // Criar mapa: chave = Empresa|Linha|Produto, valor = array de {mes, estoque}
+    const produtoEstoques = {};
+    
+    dadosFiltrados.forEach(r => {
+      const chave = `${r.Empresa}|${r['Linha de Produto']}|${r.Produto}`;
+      const mes = r["Mês"];
+      const estoque = +r["Estoque Qtd"] || 0;
+      
+      if (!produtoEstoques[chave]) {
+        produtoEstoques[chave] = {};
       }
-      produtosMap[key].registros.push(r);
+      
+      // Acumular estoque por mês (caso haja múltiplas linhas do mesmo produto/mês)
+      produtoEstoques[chave][mes] = (produtoEstoques[chave][mes] || 0) + estoque;
     });
     
-    // Para cada produto, pegar o estoque do último mês com atividade
+    // Para cada produto, pegar o estoque do último mês que existe
     let estoqueTotal = 0;
-    Object.values(produtosMap).forEach(prod => {
-      const registrosProduto = prod.registros.filter(r => 
-        !selectedAno || String(r["Ano"]) === String(selectedAno)
-      );
+    Object.keys(produtoEstoques).forEach(chave => {
+      const mesesDoProduto = produtoEstoques[chave];
       
-      if (registrosProduto.length === 0) return;
-      
-      // Encontrar o último mês com atividade para este produto específico
-      const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-      let ultimoMesComDados = null;
-      let estoqueProduto = 0;
-      
+      // Encontrar o último mês (mais recente cronologicamente)
+      let ultimoMes = null;
       for (let i = MESES.length - 1; i >= 0; i--) {
-        const m = MESES[i];
-        const regsDoMes = registrosProduto.filter(r => r["Mês"] === m);
-        const temAtividade = regsDoMes.some(r => 
-          (+r[" Real VGV "]||0) > 0 || 
-          (+r[" Meta VGV "]||0) > 0 ||
-          (+r["Real Qtd"]||0) > 0 ||
-          (+r["Meta Qtd"]||0) > 0
-        );
-        
-        if (temAtividade) {
-          estoqueProduto = regsDoMes.reduce((s, r) => s + (+r["Estoque Qtd"]||0), 0);
-          ultimoMesComDados = m;
+        if (mesesDoProduto[MESES[i]] !== undefined) {
+          ultimoMes = MESES[i];
           break;
         }
       }
       
-      estoqueTotal += estoqueProduto;
+      if (ultimoMes) {
+        estoqueTotal += mesesDoProduto[ultimoMes];
+        console.log(`[ESTOQUE QTD] ${chave} - Último mês: ${ultimoMes}, Estoque: ${mesesDoProduto[ultimoMes]}`);
+      }
     });
     
+    console.log(`[ESTOQUE QTD] Total: ${estoqueTotal}`);
     return estoqueTotal;
   };
   window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
     const base = Array.isArray(window.allData) ? window.allData : [];
     const data = extraFilterFn ? base.filter(extraFilterFn) : base;
     
-    if (selectedMeses && selectedMeses.length>=1){
+    // Filtrar por ano se especificado
+    const dadosFiltrados = selectedAno 
+      ? data.filter(r => String(r["Ano"]) === String(selectedAno))
+      : data;
+    
+    if (selectedMeses && selectedMeses.length >= 1){
       const ord = ordMeses(selectedMeses);
       
       if (ord.length === 1) {
         // 1 mês: pegar estoque DESSE mês
         const mes = ord[0];
-        return data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mes)
+        return dadosFiltrados.filter(r => r["Mês"] === mes)
                    .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
       } else {
         // Múltiplos meses: pegar estoque do mês SUBSEQUENTE ao último
@@ -2675,82 +2667,62 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         const idxSubsequente = idxUltimo + 1;
         
         if (idxSubsequente < 12) {
-          // Mês subsequente existe no mesmo ano
           const mesSubsequente = MESES[idxSubsequente];
-          return data.filter(r => (!selectedAno || String(r["Ano"])===String(selectedAno)) && r["Mês"]===mesSubsequente)
+          return dadosFiltrados.filter(r => r["Mês"] === mesSubsequente)
                      .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
         } else {
-          // Mês subsequente seria janeiro do ano seguinte
-          if (selectedAno) {
-            const anoSeguinte = selectedAno + 1;
-            return data.filter(r => String(r["Ano"])===String(anoSeguinte) && r["Mês"]==="Janeiro")
+          // Janeiro do ano seguinte
+          const anoSeguinte = selectedAno ? selectedAno + 1 : null;
+          if (anoSeguinte) {
+            return base.filter(r => String(r["Ano"]) === String(anoSeguinte) && r["Mês"] === "Janeiro")
+                       .filter(extraFilterFn || (()=>true))
                        .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-          } else {
-            // Sem ano filtrado: pegar o último estoque disponível (janeiro mais recente)
-            const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
-            for (const ano of anos) {
-              const estoque = data.filter(r => String(r["Ano"])===String(ano) && r["Mês"]==="Janeiro")
-                                  .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-              if (estoque > 0) return estoque;
-            }
-            return 0;
           }
+          return 0;
         }
       }
     }
     
-    // Sem filtro de mês: calcular estoque por produto (último mês de cada produto)
-    // Agrupar por produto
-    const produtosMap = {};
-    data.forEach(r => {
-      const key = `${r.Empresa}|${r['Linha de Produto']}|${r.Produto}`;
-      if (!produtosMap[key]) {
-        produtosMap[key] = {
-          empresa: r.Empresa,
-          linha: r['Linha de Produto'],
-          produto: r.Produto,
-          registros: []
-        };
+    // Sem filtro de mês: pegar o último mês disponível de cada produto
+    const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+    
+    // Criar mapa: chave = Empresa|Linha|Produto, valor = array de {mes, estoque}
+    const produtoEstoques = {};
+    
+    dadosFiltrados.forEach(r => {
+      const chave = `${r.Empresa}|${r['Linha de Produto']}|${r.Produto}`;
+      const mes = r["Mês"];
+      const estoque = +r["Estoque VGV"] || 0;
+      
+      if (!produtoEstoques[chave]) {
+        produtoEstoques[chave] = {};
       }
-      produtosMap[key].registros.push(r);
+      
+      // Acumular estoque por mês (caso haja múltiplas linhas do mesmo produto/mês)
+      produtoEstoques[chave][mes] = (produtoEstoques[chave][mes] || 0) + estoque;
     });
     
-    // Para cada produto, pegar o estoque do último mês com atividade
+    // Para cada produto, pegar o estoque do último mês que existe
     let estoqueTotal = 0;
-    Object.values(produtosMap).forEach(prod => {
-      const registrosProduto = prod.registros.filter(r => 
-        !selectedAno || String(r["Ano"]) === String(selectedAno)
-      );
+    Object.keys(produtoEstoques).forEach(chave => {
+      const mesesDoProduto = produtoEstoques[chave];
       
-      if (registrosProduto.length === 0) return;
-      
-      // Encontrar o último mês com atividade para este produto específico
-      const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-      let ultimoMesComDados = null;
-      let estoqueProduto = 0;
-      
+      // Encontrar o último mês (mais recente cronologicamente)
+      let ultimoMes = null;
       for (let i = MESES.length - 1; i >= 0; i--) {
-        const m = MESES[i];
-        const regsDoMes = registrosProduto.filter(r => r["Mês"] === m);
-        const temAtividade = regsDoMes.some(r => 
-          (+r[" Real VGV "]||0) > 0 || 
-          (+r[" Meta VGV "]||0) > 0 ||
-          (+r["Real Qtd"]||0) > 0 ||
-          (+r["Meta Qtd"]||0) > 0
-        );
-        
-        if (temAtividade) {
-          estoqueProduto = regsDoMes.reduce((s, r) => s + (+r["Estoque VGV"]||0), 0);
-          ultimoMesComDados = m;
-          console.log(`[ESTOQUE] Produto ${prod.produto}: último mês com atividade = ${m}, estoque = ${estoqueProduto.toFixed(2)}`);
+        if (mesesDoProduto[MESES[i]] !== undefined) {
+          ultimoMes = MESES[i];
           break;
         }
       }
       
-      estoqueTotal += estoqueProduto;
+      if (ultimoMes) {
+        estoqueTotal += mesesDoProduto[ultimoMes];
+        console.log(`[ESTOQUE VGV] ${chave} - Último mês: ${ultimoMes}, Estoque: R$ ${(mesesDoProduto[ultimoMes]/1000000).toFixed(2)}M`);
+      }
     });
     
-    console.log(`[ESTOQUE] Total VGV calculado: ${estoqueTotal.toFixed(2)}`);
+    console.log(`[ESTOQUE VGV] Total: R$ ${(estoqueTotal/1000000).toFixed(2)}M`);
     return estoqueTotal;
   };
 })();
