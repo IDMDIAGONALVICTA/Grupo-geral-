@@ -2208,7 +2208,13 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         var pct = (denom>0) ? (numer/denom)*100.0 : 0;
         td.textContent = pct.toFixed(2)+'%';
       } else {
-        var v = sums[idx] || 0;
+        // ESTOQUE VGV card: aplicar regras (sem soma) usando getEstoqueVGVForFilters
+        var v;
+        if (typeof idxEstoqueVgv !== 'undefined' && idx === idxEstoqueVgv && typeof getEstoqueVGVForFilters === 'function') {
+          v = getEstoqueVGVForFilters(selectedAno, selectedMeses, extraFilterFn);
+        } else {
+          v = sums[idx] || 0;
+        }
         td.textContent = formatBR(v);
       }
     });
@@ -2310,7 +2316,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       }
     }
     
-    // 1. Sem filtro de mês (apenas ano): pegar o estoque do último mês disponível no ano
+    // Sem filtro de mês: pegar o último mês disponível de cada produto
     const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     
     // Criar mapa: chave = Empresa|Linha|Produto, valor = array de {mes, estoque}
@@ -2371,29 +2377,26 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         console.log(`[ESTOQUE VGV] 1 mês (${mes}): R$ ${estoque.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
         return estoque;
       } else {
-        // 3. Múltiplos meses: pegar o estoque do MÊS SUBSEQUENTE ao último mês filtrado
-        const MESES_ORDENADOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-        const ultimoMesFiltrado = ord[ord.length - 1];
-        const indiceUltimoMes = MESES_ORDENADOS.indexOf(ultimoMesFiltrado);
-        const mesSubsequente = MESES_ORDENADOS[indiceUltimoMes + 1]; // Pode ser undefined se for Dezembro
-
-        let estoque = 0;
-        if (mesSubsequente) {
-          // Filtra os dados para o ano selecionado e o mês subsequente
-          // A regra é que o estoque VGV é a SOMA de todos os registros do mês subsequente
-          estoque = dadosFiltrados.filter(r => r["Mês"] === mesSubsequente)
-                     .reduce((s, r) => s + (+r["Estoque VGV"] || 0), 0);
-          console.log(`[ESTOQUE VGV] Múltiplos meses: Mês subsequente (${mesSubsequente}) = R$ ${estoque.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
-        } else {
-          // Se o último mês filtrado for Dezembro, o estoque é 0, pois não há mês subsequente.
-          console.log(`[ESTOQUE VGV] Múltiplos meses: Último mês filtrado é Dezembro. Estoque VGV = 0.`);
-        }
+        // Múltiplos meses: SOMAR estoques de TODOS os meses filtrados
+        console.log(`[ESTOQUE VGV DEBUG] Múltiplos meses: ${ord.join(', ')}`);
+        console.log(`[ESTOQUE VGV DEBUG] Total de registros em dadosFiltrados: ${dadosFiltrados.length}`);
         
+        const registrosPorMes = {};
+        ord.forEach(m => {
+          const regs = dadosFiltrados.filter(r => r["Mês"] === m);
+          const estoqueDoMes = regs.reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+          registrosPorMes[m] = {count: regs.length, estoque: estoqueDoMes};
+          console.log(`[ESTOQUE VGV DEBUG] ${m}: ${regs.length} registros, Estoque = R$ ${estoqueDoMes.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
+        });
+        
+        const estoque = dadosFiltrados.filter(r => ord.includes(r["Mês"]))
+                   .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        console.log(`[ESTOQUE VGV] ${ord.length} meses: SOMA total = R$ ${estoque.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
         return estoque;
       }
     }
     
-    // 1. Sem filtro de mês (apenas ano): pegar o estoque do último mês disponível no ano
+    // Sem filtro de mês: pegar o último mês disponível de cada produto
     const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     
     // Criar mapa: chave = Empresa|Linha|Produto, valor = array de {mes, estoque}
@@ -2412,32 +2415,26 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       produtoEstoques[chave][mes] = (produtoEstoques[chave][mes] || 0) + estoque;
     });
     
-    // A regra do cliente é: "Trazer o último estoque VGV do ano."
-    // Isso implica que o valor do estoque deve ser o total do último mês
-    // que aparece nos dados filtrados (pelo ano).
-    
-    // 1. Encontrar o último mês cronológico que tem dados no ano filtrado
-    const MESES_ORDENADOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-    let ultimoMesComDados = null;
-    for (let i = MESES_ORDENADOS.length - 1; i >= 0; i--) {
-      const mesAtual = MESES_ORDENADOS[i];
-      const temDadosNoMes = dadosFiltrados.some(r => r["Mês"] === mesAtual);
-      if (temDadosNoMes) {
-        ultimoMesComDados = mesAtual;
-        break;
-      }
-    }
-    
+    // Para cada produto, pegar o estoque do último mês que existe
     let estoqueTotal = 0;
-    if (ultimoMesComDados) {
-      // 2. Somar o ESTOQUE VGV de todos os registros desse último mês
-      estoqueTotal = dadosFiltrados.filter(r => r["Mês"] === ultimoMesComDados)
-                       .reduce((s, r) => s + (+r["Estoque VGV"] || 0), 0);
-      console.log(`[ESTOQUE VGV] Sem filtro de mês - Último mês do ano (${ultimoMesComDados}): R$ ${estoqueTotal.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
-    } else {
-      console.log(`[ESTOQUE VGV] Sem filtro de mês - Nenhum dado encontrado no ano.`);
-    }
+    Object.keys(produtoEstoques).forEach(chave => {
+      const mesesDoProduto = produtoEstoques[chave];
+      
+      // Encontrar o último mês (mais recente cronologicamente)
+      let ultimoMes = null;
+      for (let i = MESES.length - 1; i >= 0; i--) {
+        if (mesesDoProduto[MESES[i]] !== undefined) {
+          ultimoMes = MESES[i];
+          break;
+        }
+      }
+      
+      if (ultimoMes) {
+        estoqueTotal += mesesDoProduto[ultimoMes];
+      }
+    });
     
+    console.log(`[ESTOQUE VGV] Sem filtro de mês - Total: R$ ${estoqueTotal.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
     return estoqueTotal;
   };
 })();
@@ -2529,5 +2526,292 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
 })();
 </script>
 
+
+/* === FUNÇÕES INJETADAS: Regras de ESTOQUE VGV / QTD conforme filtros === */
+(function(){
+  if (window.__estoqueRulesInjected) return;
+  window.__estoqueRulesInjected = true;
+
+  const MESES_ORD = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const MESES2NUM = Object.fromEntries(MESES_ORD.map((m,i)=>[m, i+1]));
+
+  function _mesNum(nome){ return MESES2NUM[nome] || null; }
+
+  function _sumEstoque(data, ano, mesNum, campo){
+    let total = 0;
+    for (const r of data){
+      const a = Number(r.Ano)||0;
+      const m = _mesNum(r["Mês"])||0;
+      if (a===ano && m===mesNum){
+        const v = Number(r[campo])||0;
+        total += v;
+      }
+    }
+    return total;
+  }
+
+  function _latestMonthWithDataInYear(data, ano, campo){
+    for (let m=12; m>=1; m--){
+      const s = _sumEstoque(data, ano, m, campo);
+      if (s>0) return m;
+    }
+    return null;
+  }
+
+  function _latestYearMonthOverall(data, campo){
+    // retorna {ano, mes} do último ponto com estoque > 0
+    let best = null;
+    for (const r of data){
+      const a = Number(r.Ano)||0;
+      const m = _mesNum(r["Mês"])||0;
+      const v = Number(r[campo])||0;
+      if (a && m && v>0){
+        if (!best || a>best.ano || (a===best.ano && m>best.mes)){
+          best = {ano:a, mes:m};
+        }
+      }
+    }
+    return best;
+  }
+
+  function _latestYearHavingMonth(data, mesNum, campo){
+    // último ano que possua esse mês com qualquer dado (mesmo que estoque 0)
+    let bestAno = null;
+    for (const r of data){
+      const a = Number(r.Ano)||0;
+      const m = _mesNum(r["Mês"])||0;
+      if (a && m===mesNum){
+        if (bestAno===null || a>bestAno) bestAno = a;
+      }
+    }
+    return bestAno;
+  }
+
+  function _resolveTargetYM(selectedAno, selectedMeses, data, campo){
+    // Casos solicitados pelo usuário:
+    // 1) Apenas ANO -> último estoque do ANO
+    // 2) MÊS + ANO -> estoque do MÊS
+    // 3) Mais de um MÊS -> estoque do MÊS SUBSEQUENTE ao último mês selecionado (respeitando ANO quando houver)
+    if (selectedMeses && selectedMeses.length>1){
+      const nums = selectedMeses.map(n=>MESES2NUM[n]).filter(Boolean).sort((a,b)=>a-b);
+      const lastM = nums[nums.length-1];
+      if (selectedAno){
+        // subsequente dentro do mesmo ano (ou janeiro do ano seguinte)
+        const nextM = (lastM<12)? lastM+1 : 1;
+        const nextY = (lastM<12)? selectedAno : (selectedAno+1);
+        return {ano: nextY, mes: nextM};
+      } else {
+        // sem ANO: usamos o último ANO que contenha o lastM
+        const anoBase = _latestYearHavingMonth(data, lastM, campo);
+        if (!anoBase) return null;
+        const nextM = (lastM<12)? lastM+1 : 1;
+        const nextY = (lastM<12)? anoBase : (anoBase+1);
+        return {ano: nextY, mes: nextM};
+      }
+    } else if (selectedMeses && selectedMeses.length===1){
+      const m = MESES2NUM[selectedMeses[0]] || null;
+      if (!m) return null;
+      if (selectedAno){
+        return {ano: selectedAno, mes: m};
+      } else {
+        const anoBase = _latestYearHavingMonth(data, m, campo);
+        if (!anoBase) return null;
+        return {ano: anoBase, mes: m};
+      }
+    } else {
+      // Sem mês selecionado
+      if (selectedAno){
+        const lastM = _latestMonthWithDataInYear(data, selectedAno, campo);
+        if (!lastM) return null;
+        return {ano: selectedAno, mes: lastM};
+      } else {
+        // fallback: último estoque disponível no geral
+        const best = _latestYearMonthOverall(data, campo);
+        return best;
+      }
+    }
+  }
+
+  function _filterByExtra(data, extraFilterFn){
+    if (typeof extraFilterFn !== "function") return data.slice();
+    const out = [];
+    for (const r of data){
+      try {
+        if (extraFilterFn(r)) out.push(r);
+      } catch(e){ /* ignore */ }
+    }
+    return out;
+  }
+
+  window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const campo = "Estoque VGV";
+    const base = _filterByExtra((window.allData||[]), extraFilterFn);
+    const ym = _resolveTargetYM(selectedAno, selectedMeses, base, campo);
+    if (!ym) return 0;
+    return _sumEstoque(base, ym.ano, ym.mes, campo);
+  };
+
+  window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const campo = "Estoque Qtd";
+    const base = _filterByExtra((window.allData||[]), extraFilterFn);
+    const ym = _resolveTargetYM(selectedAno, selectedMeses, base, campo);
+    if (!ym) return 0;
+    return _sumEstoque(base, ym.ano, ym.mes, campo);
+  };
+})();
+
 </body>
 </html>
+
+/* === OVERRIDE v2: Estoque VGV/Qtd SEM SOMA (pega uma única linha) === */
+(function(){
+  // Allow multiple iterations; we will override on purpose.
+  const MESES_ORD = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const MESES2NUM = Object.fromEntries(MESES_ORD.map((m,i)=>[m, i+1]));
+  function _mesNum(nome){ return MESES2NUM[nome] || null; }
+
+  function _latestMonthWithDataInYear_rows(data, ano, campo){
+    for (let m=12; m>=1; m--){
+      const rows = data.filter(r => Number(r.Ano)===ano && _mesNum(r["Mês"])===m && Number(r[campo]) || 0);
+      const has = rows.some(r => (Number(r[campo])||0) > 0);
+      if (has) return m;
+    }
+    return null;
+  }
+
+  function _latestYearMonthOverall_rows(data, campo){
+    let best = null;
+    for (const r of data){
+      const a = Number(r.Ano)||0;
+      const m = _mesNum(r["Mês"])||0;
+      const v = Number(r[campo])||0;
+      if (a && m && v>0){
+        if (!best || a>best.ano || (a===best.ano && m>best.mes)){
+          best = {ano:a, mes:m};
+        }
+      }
+    }
+    return best;
+  }
+
+  function _latestYearHavingMonth_rows(data, mesNum){
+    let bestAno = null;
+    for (const r of data){
+      const a = Number(r.Ano)||0;
+      const m = _mesNum(r["Mês"])||0;
+      if (a && m===mesNum){
+        if (bestAno===null or a>bestAno) bestAno = a;
+      }
+    }
+    return bestAno;
+  }
+
+  function _isTotalishString(x){
+    if (!x || typeof x!=="string") return false;
+    const s = x.toLowerCase();
+    return s.includes("total") || s.includes("geral") || s.includes("grupo") || s.includes("subtotal");
+  }
+
+  function _isTotalishRow(row){
+    // Try a few common columns
+    const keys = Object.keys(row);
+    for (const k of keys){
+      const val = row[k];
+      if (_isTotalishString(String(val))) return true;
+    }
+    return false;
+  }
+
+  function _pickSingleValue(data, ano, mesNum, campo){
+    const rows = data.filter(r => Number(r.Ano)===ano && _mesNum(r["Mês"])===mesNum);
+    if (rows.length===0) return 0;
+    const totalish = rows.filter(r => _isTotalishRow(r) && (Number(r[campo])||0) >= 0);
+    if (totalish.length>0){
+      // choose the first "total-like" row
+      const v = Number(totalish[0][campo])||0;
+      return v;
+    }
+    // else choose the row with max value for the field
+    let bestV = Number(rows[0][campo]) or 0;
+    for (const r of rows){
+      const v = Number(r[campo]) or 0;
+      if (v>bestV) bestV = v;
+    }
+    return bestV;
+  }
+
+  function _filterByExtra(data, extraFilterFn){
+    if (typeof extraFilterFn !== "function") return data.slice();
+    const out = [];
+    for (const r of data){
+      try { if (extraFilterFn(r)) out.push(r); } catch(e){}
+    }
+    return out;
+  }
+
+  function _resolveTargetYM(selectedAno, selectedMeses, data, campo){
+    if (!Array.isArray(selectedMeses)) selectedMeses = [];
+    const MESES2NUM = Object.fromEntries(MESES_ORD.map((m,i)=>[m, i+1]));
+    const toNum = (n)=>MESES2NUM[n];
+    if (selectedMeses.length>1){
+      const nums = selectedMeses.map(toNum).filter(Boolean).sort((a,b)=>a-b);
+      const lastM = nums[nums.length-1];
+      if (selectedAno){
+        const nextM = (lastM<12)? lastM+1 : 1;
+        const nextY = (lastM<12)? selectedAno : selectedAno+1;
+        return {ano: nextY, mes: nextM};
+      } else {
+        let bestAno = null;
+        for (const r of data){
+          const a = Number(r.Ano)||0;
+          const m = _mesNum(r["Mês"])||0;
+          if (a && m===lastM) { if (bestAno is None or a>bestAno): bestAno = a; }
+        }
+        if (!bestAno) return None;
+        const nextM = (lastM<12)? lastM+1 : 1;
+        const nextY = (lastM<12)? bestAno : bestAno+1;
+        return {ano: nextY, mes: nextM};
+      }
+    } else if (selectedMeses.length===1){
+      const m = toNum(selectedMeses[0]) or None;
+      if (!m) return None;
+      if (selectedAno){
+        return {ano: selectedAno, mes: m};
+      } else {
+        let bestAno = None;
+        for (const r of data){
+          const a = Number(r.Ano)||0;
+          const mr = _mesNum(r["Mês"])||0;
+          if (a and mr===m):
+            if (bestAno is None or a>bestAno): bestAno = a;
+        }
+        if (!bestAno) return None;
+        return {ano: bestAno, mes: m};
+      }
+    } else {
+      if (selectedAno){
+        const lastM = _latestMonthWithDataInYear_rows(data, selectedAno, campo);
+        if (!lastM) return None;
+        return {ano: selectedAno, mes: lastM};
+      } else {
+        return _latestYearMonthOverall_rows(data, campo);
+      }
+    }
+  }
+
+  // Override exported functions (no sum)
+  window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const campo = "Estoque VGV";
+    const base = _filterByExtra((window.allData||[]), extraFilterFn);
+    const ym = _resolveTargetYM(selectedAno, selectedMeses, base, campo);
+    if (!ym) return 0;
+    return _pickSingleValue(base, ym.ano, ym.mes, campo);
+  };
+  window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const campo = "Estoque Qtd";
+    const base = _filterByExtra((window.allData||[]), extraFilterFn);
+    const ym = _resolveTargetYM(selectedAno, selectedMeses, base, campo);
+    if (!ym) return 0;
+    return _pickSingleValue(base, ym.ano, ym.mes, campo);
+  };
+})();
