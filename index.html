@@ -1082,13 +1082,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
                     <div class="metric-subtitle">
                         Vendas: R$ ${formatMoneyShort(realVGV)}<br>
                         Estoque: R$ ${formatMoneyShort(estoqueVGV)}<br>
-                        <small style="opacity: 0.7;">
-                            ${selectedMeses.length === 0 
-                                ? 'Estoque: Último mês disponível' 
-                                : selectedMeses.length === 1
-                                ? 'Estoque: Do próprio mês'
-                                : 'Estoque: Mês subsequente ao período'}
-                        </small>
+                                               
                     </div>
                     <div class="metric-bar">
                         <div class="metric-bar-fill" style="width: ${Math.min(vsoMedio, 100)}%"></div>
@@ -2245,71 +2239,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
 
 
 
-<script>
-(function(){
-  const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-  
-  // Encontra o último mês que tem dados de vendas ou meta (indicando atividade comercial)
-  function ultimoMesComAtividade(data, ano){
-    for (let i=MESES.length-1; i>=0; i--){
-      const m = MESES[i];
-      const registros = data.filter(r => String(r["Ano"])===String(ano) && r["Mês"]===m);
-      // Verifica se há dados de vendas ou meta neste mês
-      const temAtividade = registros.some(r => 
-        (+r[" Real VGV "]||0) > 0 || 
-        (+r[" Meta VGV "]||0) > 0 || 
-        (+r["Real Qtd"]||0) > 0 || 
-        (+r["Meta Qtd"]||0) > 0
-      );
-      if (temAtividade) {
-        console.log(`[ESTOQUE] Último mês com atividade em ${ano}: ${m}`);
-        return m;
-      }
-    }
-    console.log(`[ESTOQUE] Nenhum mês com atividade encontrado em ${ano}`);
-    return null;
-  }
-  
-  function ultimoMesComInfoSum(data, ano, campo){
-    for (let i=MESES.length-1; i>=0; i--){
-      const m = MESES[i];
-      const soma = data.filter(r => String(r["Ano"])===String(ano) && r["Mês"]===m)
-                       .reduce((s,r)=> s + (+r[campo]||0), 0);
-      if (soma > 0) return {mes:m, soma};
-    }
-    return {mes:null, soma:0};
-  }
-  function ordMeses(arr){
-    return arr.slice().sort((a,b)=>MESES.indexOf(a)-MESES.indexOf(b));
-  }
-  window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
-    const base = Array.isArray(window.allData) ? window.allData : [];
-    const data = extraFilterFn ? base.filter(extraFilterFn) : base;
-    
-    // Filtrar por ano se especificado
-    const dadosFiltrados = selectedAno 
-      ? data.filter(r => String(r["Ano"]) === String(selectedAno))
-      : data;
-    
-    if (selectedMeses && selectedMeses.length >= 1){
-      const ord = ordMeses(selectedMeses);
-      
-      if (ord.length === 1) {
-        // 1 mês: pegar estoque DESSE mês
-        const mes = ord[0];
-        const estoque = dadosFiltrados.filter(r => r["Mês"] === mes)
-                   .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
-        console.log(`[ESTOQUE QTD] 1 mês (${mes}): ${estoque}`);
-        return estoque;
-      } else {
-        // Múltiplos meses: SOMAR estoques de TODOS os meses filtrados
-        const estoque = dadosFiltrados.filter(r => ord.includes(r["Mês"]))
-                   .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
-        console.log(`[ESTOQUE QTD] ${ord.length} meses (${ord.join(', ')}): SOMA de estoques = ${estoque}`);
-        return estoque;
-      }
-    }
-    
+   
     // 1. Sem filtro de mês (apenas ano): pegar o estoque do último mês disponível no ano
     const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     
@@ -2390,37 +2320,7 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         
         return estoque;
       }
-    }
-    
-    // 1. Sem filtro de mês (apenas ano): Trazer o último estoque VGV do ano.
-    const MESES_ORDENADOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-    
-    // 1. Encontrar o último mês cronológico que tem dados no ano filtrado
-    let ultimoMesComDados = null;
-    for (let i = MESES_ORDENADOS.length - 1; i >= 0; i--) {
-      const mesAtual = MESES_ORDENADOS[i];
-      const temDadosNoMes = dadosFiltrados.some(r => r["Mês"] === mesAtual);
-      if (temDadosNoMes) {
-        ultimoMesComDados = mesAtual;
-        break;
-      }
-    }
-    
-    let estoqueTotal = 0;
-    if (ultimoMesComDados) {
-      // 2. Somar o ESTOQUE VGV de todos os registros desse último mês
-      estoqueTotal = dadosFiltrados.filter(r => r["Mês"] === ultimoMesComDados)
-                       .reduce((s, r) => s + (+r["Estoque VGV"] || 0), 0);
-      console.log(`[ESTOQUE VGV] Sem filtro de mês - Último mês do ano (${ultimoMesComDados}): R$ ${estoqueTotal.toLocaleString('pt-BR', {maximumFractionDigits:0})}`);
-    } else {
-      console.log(`[ESTOQUE VGV] Sem filtro de mês - Nenhum dado encontrado no ano.`);
-    }
-    
-    return estoqueTotal;
-  };
-})();
-</script>
-
+   
 
 <script>
 // ===== SAFE AUTO-LOADER (append only) =====
