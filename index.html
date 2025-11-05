@@ -1112,6 +1112,10 @@ function toggleDebugPanel() {
             // Métricas básicas
             const metaVGV = data.reduce((sum, r) => sum + (r[' Meta VGV '] || 0), 0);
             const realVGV = data.reduce((sum, r) => sum + (r[' Real VGV '] || 0), 0);
+            
+            console.log(`[VENDAS DEBUG] Total de registros em data: ${data.length}`);
+            console.log(`[VENDAS DEBUG] Real VGV (soma de vendas): R$ ${(realVGV/1000000).toFixed(2)}M`);
+            
             const selectedAnoStrs = Array.from(selectedFilters.ano);
 const selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
 const selectedMeses = Array.from(selectedFilters.mes);
@@ -2625,9 +2629,20 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
         return estoque;
       } else {
         // Múltiplos meses: SOMAR estoques de TODOS os meses filtrados
+        console.log(`[ESTOQUE VGV DEBUG] Múltiplos meses: ${ord.join(', ')}`);
+        console.log(`[ESTOQUE VGV DEBUG] Total de registros em dadosFiltrados: ${dadosFiltrados.length}`);
+        
+        const registrosPorMes = {};
+        ord.forEach(m => {
+          const regs = dadosFiltrados.filter(r => r["Mês"] === m);
+          const estoqueDoMes = regs.reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+          registrosPorMes[m] = {count: regs.length, estoque: estoqueDoMes};
+          console.log(`[ESTOQUE VGV DEBUG] ${m}: ${regs.length} registros, Estoque = R$ ${(estoqueDoMes/1000000).toFixed(2)}M`);
+        });
+        
         const estoque = dadosFiltrados.filter(r => ord.includes(r["Mês"]))
                    .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
-        console.log(`[ESTOQUE VGV] ${ord.length} meses (${ord.join(', ')}): SOMA de estoques = R$ ${(estoque/1000000).toFixed(2)}M`);
+        console.log(`[ESTOQUE VGV] ${ord.length} meses: SOMA total = R$ ${(estoque/1000000).toFixed(2)}M`);
         return estoque;
       }
     }
