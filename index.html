@@ -2653,6 +2653,100 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
   };
 })();
 
+
+/* === OVERRIDE: getEstoqueVGVForFilters (no sum) === */
+(function(){
+  // Always override to ensure non-sum behavior
+  const MESES_ORD = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const MESES2NUM = Object.fromEntries(MESES_ORD.map((m,i)=>[m, i+1]));
+  function _mesNum(nome){ return MESES2NUM[nome] || null; }
+  function _filterBase(extraFilterFn){
+    const base = Array.isArray(window.allData) ? window.allData.slice() : [];
+    if (typeof extraFilterFn!=='function') return base;
+    const out = [];
+    for (const r of base){ try{ if (extraFilterFn(r)) out.push(r);}catch(e){} }
+    return out;
+  }
+  function _latestMonthWithDataInYear(data, ano){
+    for (let m=12; m>=1; m--){
+      if (data.some(r => Number(r.Ano)===ano && _mesNum(r["Mês"])===m && Number(r["Estoque VGV"])>0)) return m;
+    }
+    return null;
+  }
+  function _latestYearHavingMonth(data, mesNum){
+    let best = null;
+    for (const r of data){
+      const a = Number(r.Ano)||0; const m = _mesNum(r["Mês"])||0;
+      if (a && m===mesNum){ if (!best || a>best) best = a; }
+    }
+    return best;
+  }
+  function _latestOverall(data){
+    let best=null;
+    for (const r of data){
+      const a = Number(r.Ano)||0; const m = _mesNum(r["Mês"])||0;
+      const v = Number(r["Estoque VGV"])||0;
+      if (a && m && v>=0){
+        if (!best || a>best.ano || (a===best.ano && m>best.mes)) best={ano:a, mes:m};
+      }
+    }
+    return best;
+  }
+  function _resolveYM(selectedAno, selectedMeses, data){
+    if (Array.isArray(selectedMeses) && selectedMeses.length>1){
+      const nums = selectedMeses.map(n=>MESES2NUM[n]).filter(Boolean).sort((a,b)=>a-b);
+      const lastM = nums[nums.length-1];
+      if (selectedAno){
+        return {ano: lastM<12 ? selectedAno : selectedAno+1, mes: lastM<12 ? lastM+1 : 1};
+      } else {
+        const anoBase = _latestYearHavingMonth(data, lastM);
+        if (!anoBase) return null;
+        return {ano: lastM<12 ? anoBase : anoBase+1, mes: lastM<12 ? lastM+1 : 1};
+      }
+    } else if (Array.isArray(selectedMeses) && selectedMeses.length===1){
+      const m = MESES2NUM[selectedMeses[0]]||null;
+      if (!m) return null;
+      if (selectedAno) return {ano:selectedAno, mes:m};
+      const anoBase = _latestYearHavingMonth(data, m);
+      return anoBase ? {ano:anoBase, mes:m} : null;
+    } else {
+      if (selectedAno){
+        const lastM = _latestMonthWithDataInYear(data, selectedAno);
+        return lastM ? {ano:selectedAno, mes:lastM} : null;
+      } else {
+        return _latestOverall(data);
+      }
+    }
+  }
+  function _isTotalishRow(row){
+    const keys = Object.keys(row||{});
+    for (const k of keys){
+      const v = String(row[k]??"").toLowerCase();
+      if (v.includes("total") || v.includes("geral") || v.includes("grupo") || v.includes("subtotal")) return true;
+    }
+    return false;
+  }
+  function _pickSingleValue(rows){
+    if (!rows || !rows.length) return 0;
+    const totalish = rows.filter(r => _isTotalishRow(r) && (Number(r["Estoque VGV"])||0)>=0);
+    if (totalish.length>0) return Number(totalish[0]["Estoque VGV"])||0;
+    let best = Number(rows[0]["Estoque VGV"])||0;
+    for (const r of rows){
+      const v = Number(r["Estoque VGV"])||0;
+      if (v>best) best = v;
+    }
+    return best;
+  }
+  window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const data = _filterBase(extraFilterFn);
+    const ym = _resolveYM(selectedAno, selectedMeses, data);
+    if (!ym) return 0;
+    const rows = data.filter(r => Number(r.Ano)===ym.ano && _mesNum(r["Mês"])===ym.mes);
+    // DO NOT SUM: choose a single consolidated value
+    return _pickSingleValue(rows);
+  };
+})();
+
 </body>
 </html>
 
