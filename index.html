@@ -1103,6 +1103,67 @@ function toggleDebugPanel() {
   };
 })();
 </script>
+<script>
+(function(){
+  if (window.__vsoHelpersInjected) return; window.__vsoHelpersInjected = true;
+  const MESES_ORD = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const MESES2NUM = Object.fromEntries(MESES_ORD.map((m,i)=>[m, i+1]));
+  function _mesNum(nome){ return MESES2NUM[nome] || null; }
+  window.__collectMonthlyTotalsFromData = function(rows){
+    const m = {};
+    for (const r of rows){
+      const a = Number(r.Ano)||0;
+      const mesN = _mesNum(r["Mês"])||0;
+      if (!a || !mesN) continue;
+      const key = a + "-" + String(mesN).padStart(2,"0");
+      const real = Number(r[" Real VGV "] ?? r["Real VGV"] ?? r["REAL VGV"] ?? r["Real_VGV"] ?? 0) || 0;
+      const estq = Number(r["Estoque VGV"] ?? r["ESTOQUE VGV"] ?? r["Estoque_VGV"] ?? 0) || 0;
+      if (!m[key]) m[key] = {real:0, estoque:0};
+      m[key].real += real;
+      m[key].estoque += estq;
+    }
+    return m;
+  };
+  window.__calcVSO_fromMonthlyTotals = function({selectedAno, selectedMeses, selectedTri, monthlyTotals}){
+    const keys = Object.keys(monthlyTotals).sort();
+    function keyToYM(k){ const [a,m] = k.split('-').map(Number); return {a,m}; }
+    const ranges = {1:[1,3], 2:[4,6], 3:[7,9], 4:[10,12]};
+    let target = [];
+    if (selectedTri && selectedTri.length === 1){
+      const triNum = parseInt(String(selectedTri[0]).replace(/[^\d]/g,''), 10);
+      const [sM, eM] = ranges[triNum] || [1,12];
+      for (const k of keys){
+        const {a,m} = keyToYM(k);
+        if ((!selectedAno || a===selectedAno) && m>=sM && m<=eM) target.push(k);
+      }
+    } else if (selectedMeses && selectedMeses.length){
+      const MESES2NUM = Object.fromEntries(["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((m,i)=>[m, i+1]));
+      const ms = selectedMeses.map(n=>MESES2NUM[n]).filter(Boolean).sort((a,b)=>a-b);
+      for (const k of keys){
+        const {a,m} = keyToYM(k);
+        if (ms.includes(m) && (!selectedAno || a===selectedAno)) target.push(k);
+      }
+    } else {
+      if (selectedAno){
+        for (const k of keys){ const {a} = keyToYM(k); if (a===selectedAno) target.push(k); }
+      } else {
+        target = keys.slice();
+      }
+    }
+    target = Array.from(new Set(target));
+    if (target.length === 0) return 0;
+    if (target.length === 1){
+      const t = monthlyTotals[target[0]];
+      return (t.estoque>0) ? (t.real / t.estoque) * 100.0 : 0;
+    }
+    let realSum = 0, estqSum = 0;
+    for (const k of target){ realSum += monthlyTotals[k].real; estqSum += monthlyTotals[k].estoque; }
+    return (estqSum>0) ? (realSum/estqSum) * 100.0 : 0;
+  };
+})();
+</script>
+
+
 
 
 
@@ -1130,7 +1191,30 @@ const extraFilterFn = (r)=> (
 const estoqueVGV = (typeof getEstoqueVGVForFilters==='function')
   ? getEstoqueVGVForFilters(selectedAno, selectedMeses, extraFilterFn)
   : data.reduce((sum, r) => sum + (r['Estoque VGV'] || 0), 0);
-const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
+(function(){
+      try {
+        var selectedAnoStrs = (typeof selectedFilters!=='undefined' && selectedFilters.ano) ? Array.from(selectedFilters.ano) : [];
+        var selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
+        var selectedMeses = (typeof selectedFilters!=='undefined' && selectedFilters.mes) ? Array.from(selectedFilters.mes) : [];
+        var selectedTri = (typeof selectedFilters!=='undefined' && (selectedFilters.tri || selectedFilters.trimestre)) ? Array.from((selectedFilters.tri || selectedFilters.trimestre)) : [];
+        var extraFilterFn = function(r){
+          var ok = true;
+          if (selectedFilters){
+            if (selectedFilters.empresa && selectedFilters.empresa.size){ ok = ok && selectedFilters.empresa.has(String(r["Empresa"]||r["EMPRESA"]||"")); }
+            if (selectedFilters.linha && selectedFilters.linha.size){ ok = ok && selectedFilters.linha.has(String(r["Linha"]||r["LINHA"]||"")); }
+            if (selectedFilters.produto && selectedFilters.produto.size){ ok = ok && selectedFilters.produto.has(String(r["Produto"]||r["PRODUTO"]||"")); }
+          }
+          return ok;
+        };
+        var filteredData = Array.isArray(allData) ? allData.filter(extraFilterFn) : [];
+        var monthlyTotals = window.__collectMonthlyTotalsFromData(filteredData);
+        const vsoCalc = window.__calcVSO_fromMonthlyTotals({selectedAno, selectedMeses, selectedTri, monthlyTotals});
+        window.__lastComputedVSO = vsoCalc;
+      } catch(e){
+        window.__lastComputedVSO = (estoqueVGV>0) ? (realVGV/estoqueVGV*100) : 0;
+      }
+    })();
+    const vsoMedio = window.__lastComputedVSO;
             
             // Debug para verificar lógica de estoque
             console.log('=== DEBUG ESTOQUE - NOVA LÓGICA ===');
@@ -1222,7 +1306,30 @@ const extraFilterFn = (r)=> (
 const estoqueVGV = (typeof getEstoqueVGVForFilters==='function')
   ? getEstoqueVGVForFilters(selectedAno, selectedMeses, extraFilterFn)
   : data.reduce((sum, r) => sum + (r['Estoque VGV'] || 0), 0);
-const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
+(function(){
+      try {
+        var selectedAnoStrs = (typeof selectedFilters!=='undefined' && selectedFilters.ano) ? Array.from(selectedFilters.ano) : [];
+        var selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
+        var selectedMeses = (typeof selectedFilters!=='undefined' && selectedFilters.mes) ? Array.from(selectedFilters.mes) : [];
+        var selectedTri = (typeof selectedFilters!=='undefined' && (selectedFilters.tri || selectedFilters.trimestre)) ? Array.from((selectedFilters.tri || selectedFilters.trimestre)) : [];
+        var extraFilterFn = function(r){
+          var ok = true;
+          if (selectedFilters){
+            if (selectedFilters.empresa && selectedFilters.empresa.size){ ok = ok && selectedFilters.empresa.has(String(r["Empresa"]||r["EMPRESA"]||"")); }
+            if (selectedFilters.linha && selectedFilters.linha.size){ ok = ok && selectedFilters.linha.has(String(r["Linha"]||r["LINHA"]||"")); }
+            if (selectedFilters.produto && selectedFilters.produto.size){ ok = ok && selectedFilters.produto.has(String(r["Produto"]||r["PRODUTO"]||"")); }
+          }
+          return ok;
+        };
+        var filteredData = Array.isArray(allData) ? allData.filter(extraFilterFn) : [];
+        var monthlyTotals = window.__collectMonthlyTotalsFromData(filteredData);
+        const vsoCalc = window.__calcVSO_fromMonthlyTotals({selectedAno, selectedMeses, selectedTri, monthlyTotals});
+        window.__lastComputedVSO = vsoCalc;
+      } catch(e){
+        window.__lastComputedVSO = (estoqueVGV>0) ? (realVGV/estoqueVGV*100) : 0;
+      }
+    })();
+    const vsoMedio = window.__lastComputedVSO;
             const atingimentoMeta = metaVGV > 0 ? (realVGV / metaVGV * 100) : 0;
 
             // Análise por produto
@@ -1647,7 +1754,30 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
             const metaVGV = filtered.reduce((sum, r) => sum + (r[' Meta VGV '] || 0), 0);
             const realVGV = filtered.reduce((sum, r) => sum + (r[' Real VGV '] || 0), 0);
             const estoqueVGV = filtered.reduce((sum, r) => sum + (r['Estoque VGV'] || 0), 0);
-            const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
+            (function(){
+      try {
+        var selectedAnoStrs = (typeof selectedFilters!=='undefined' && selectedFilters.ano) ? Array.from(selectedFilters.ano) : [];
+        var selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
+        var selectedMeses = (typeof selectedFilters!=='undefined' && selectedFilters.mes) ? Array.from(selectedFilters.mes) : [];
+        var selectedTri = (typeof selectedFilters!=='undefined' && (selectedFilters.tri || selectedFilters.trimestre)) ? Array.from((selectedFilters.tri || selectedFilters.trimestre)) : [];
+        var extraFilterFn = function(r){
+          var ok = true;
+          if (selectedFilters){
+            if (selectedFilters.empresa && selectedFilters.empresa.size){ ok = ok && selectedFilters.empresa.has(String(r["Empresa"]||r["EMPRESA"]||"")); }
+            if (selectedFilters.linha && selectedFilters.linha.size){ ok = ok && selectedFilters.linha.has(String(r["Linha"]||r["LINHA"]||"")); }
+            if (selectedFilters.produto && selectedFilters.produto.size){ ok = ok && selectedFilters.produto.has(String(r["Produto"]||r["PRODUTO"]||"")); }
+          }
+          return ok;
+        };
+        var filteredData = Array.isArray(allData) ? allData.filter(extraFilterFn) : [];
+        var monthlyTotals = window.__collectMonthlyTotalsFromData(filteredData);
+        const vsoCalc = window.__calcVSO_fromMonthlyTotals({selectedAno, selectedMeses, selectedTri, monthlyTotals});
+        window.__lastComputedVSO = vsoCalc;
+      } catch(e){
+        window.__lastComputedVSO = (estoqueVGV>0) ? (realVGV/estoqueVGV*100) : 0;
+      }
+    })();
+    const vsoMedio = window.__lastComputedVSO;
             const atingimentoMeta = metaVGV > 0 ? (realVGV / metaVGV * 100) : 0;
             
             const resumo = [
@@ -2305,8 +2435,38 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
             denom = window.getEstoqueQtdForFilters(selectedAno, selectedMeses, extraFilterFn);
           }
         }
-        var pct = (denom>0) ? (numer/denom)*100.0 : 0;
-        td.textContent = pct.toFixed(2)+'%';
+        try{
+      var idxMes = findIndexByName('mês');
+      var idxAno = findIndexByName('ano');
+      var idxRealVgv = findIndexByName('real vgv');
+      var idxEstoqueVgv = findIndexByName('estoque vgv');
+      var monthly = {};
+      var tbody = table.querySelector('tbody');
+      var rows = tbody ? Array.from(tbody.rows) : [];
+      rows.forEach(function(tr){
+        var visible = !(tr.style && (tr.style.display==='none' || tr.style.visibility==='hidden')) && tr.offsetParent !== null;
+        if (!visible) return;
+        function asNum(txt){ return Number(String(txt).replace(/\./g,'').replace(',','.'))||0; }
+        var mesName = (tr.cells[idxMes]?.textContent||'').trim();
+        var anoStr  = (tr.cells[idxAno]?.textContent||'').trim();
+        var map={"Janeiro":1,"Fevereiro":2,"Março":3,"Abril":4,"Maio":5,"Junho":6,"Julho":7,"Agosto":8,"Setembro":9,"Outubro":10,"Novembro":11,"Dezembro":12};
+        var a = parseInt(anoStr,10)||0, m = map[mesName]||0;
+        if (!a||!m) return;
+        var k = a+"-"+String(m).padStart(2,'0');
+        if (!monthly[k]) monthly[k] = {real:0, estoque:0};
+        monthly[k].real += asNum(tr.cells[idxRealVgv]?.textContent||'0');
+        monthly[k].estoque += asNum(tr.cells[idxEstoqueVgv]?.textContent||'0');
+      });
+      var selectedAnoStrs = (typeof selectedFilters!=='undefined' && selectedFilters.ano) ? Array.from(selectedFilters.ano) : [];
+      var selectedAno = selectedAnoStrs.length===1 ? parseInt(selectedAnoStrs[0]) : null;
+      var selectedMeses = (typeof selectedFilters!=='undefined' && selectedFilters.mes) ? Array.from(selectedFilters.mes) : [];
+      var selectedTri = (typeof selectedFilters!=='undefined' && (selectedFilters.tri || selectedFilters.trimestre)) ? Array.from((selectedFilters.tri || selectedFilters.trimestre)) : [];
+      var pct = window.__calcVSO_fromMonthlyTotals({selectedAno, selectedMeses, selectedTri, monthlyTotals: monthly});
+      td.textContent = pct.toFixed(2)+'%';
+    } catch(e){
+      var pct = (denom>0) ? (numer/denom)*100.0 : 0;
+      td.textContent = pct.toFixed(2)+'%';
+    }
       } else {
         var v = sums[idx] || 0;
         td.textContent = formatBR(v);
