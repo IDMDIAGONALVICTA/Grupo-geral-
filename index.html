@@ -727,6 +727,108 @@ var allData = [];
 })();
 
 
+(function(){ // estoque helpers
+  function mesIndexBr(nome){
+    const mapa = {"Janeiro":1,"Fevereiro":2,"Março":3,"Abril":4,"Maio":5,"Junho":6,"Julho":7,"Agosto":8,"Setembro":9,"Outubro":10,"Novembro":11,"Dezembro":12};
+
+window.getEstoqueQtdForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+  const base = (typeof allData!=="undefined" && Array.isArray(allData)) ? allData : [];
+  const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+  function estoqueAnoQtd(data, ano){
+    // Quando não há filtro de mês, pegar o último mês do ano com dados
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    
+    // Procura do último para o primeiro mês
+    for (let i = meses.length - 1; i >= 0; i--) {
+      const mesNome = meses[i];
+      const soma = data.filter(r => r["Ano"]==ano && r["Mês"]===mesNome).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+      if (soma > 0) {
+        return soma;
+      }
+    }
+    return 0;
+  }
+  function estoqueMesesQtd(data, ano, mesesSelecionados){
+    const mesesOrdenados = mesesSelecionados.slice().sort((a,b)=>(window.__estoqueRules.mesIndexBr(a)||99)-(window.__estoqueRules.mesIndexBr(b)||99));
+    
+    if (mesesOrdenados.length === 1){
+      // 1 mês: pegar estoque DESSE mês
+      const mes = mesesOrdenados[0];
+      return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+    } else {
+      // Múltiplos meses: SOMAR estoques de TODOS os meses selecionados
+      return data.filter(r => r["Ano"]==ano && mesesOrdenados.includes(r["Mês"])).reduce((s,r)=>s+(+r["Estoque Qtd"]||0),0);
+    }
+  }
+
+  if (selectedAno){
+    if (selectedMeses && selectedMeses.length>=1){
+      return estoqueMesesQtd(data, selectedAno, selectedMeses);
+    } else {
+      return estoqueAnoQtd(data, selectedAno);
+    }
+  } else {
+    const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
+    if (selectedMeses && selectedMeses.length>=1){
+      return anos.reduce((s,ano)=>s + estoqueMesesQtd(data, ano, selectedMeses), 0);
+    }
+    return anos.reduce((s,ano)=>s + estoqueAnoQtd(data, ano), 0);
+  }
+};
+
+    return mapa[nome] || null;
+  }
+  function estoqueAno(data, ano){
+    // Quando não há filtro de mês, pegar o último mês do ano com dados
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    
+    // Procura do último para o primeiro mês
+    for (let i = meses.length - 1; i >= 0; i--) {
+      const mesNome = meses[i];
+      const soma = data.filter(r => r["Ano"]==ano && r["Mês"]===mesNome).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+      if (soma > 0) {
+        return soma;
+      }
+    }
+    return 0;
+  }
+  function estoqueMeses(data, ano, mesesSelecionados){
+    const mesesOrdenados = mesesSelecionados.slice().sort((a,b)=>(mesIndexBr(a)||99)-(mesIndexBr(b)||99));
+    
+    if (mesesOrdenados.length === 1){
+      // 1 mês: pegar estoque DESSE mês
+      const mes = mesesOrdenados[0];
+      return data.filter(r => r["Ano"]==ano && r["Mês"]===mes).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+    } else {
+      // Múltiplos meses: SOMAR estoques de TODOS os meses selecionados
+      return data.filter(r => r["Ano"]==ano && mesesOrdenados.includes(r["Mês"])).reduce((s,r)=>s+(+r["Estoque VGV"]||0),0);
+    }
+  }
+  window.__estoqueRules = { estoqueAno, estoqueMeses, mesIndexBr };
+})();
+
+(function(){
+  window.getEstoqueVGVForFilters = function(selectedAno, selectedMeses, extraFilterFn){
+    const base = (typeof allData!=="undefined" && Array.isArray(allData)) ? allData : [];
+    const data = extraFilterFn ? base.filter(extraFilterFn) : base;
+    if (selectedAno){
+      if (selectedMeses && selectedMeses.length>=1){
+        return window.__estoqueRules.estoqueMeses(data, selectedAno, selectedMeses);
+      } else {
+        return window.__estoqueRules.estoqueAno(data, selectedAno);
+      }
+    } else {
+      const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null)));
+      if (selectedMeses && selectedMeses.length>=1){
+        return anos.reduce((s,ano)=>s + window.__estoqueRules.estoqueMeses(data, ano, selectedMeses), 0);
+      }
+      return anos.reduce((s,ano)=>s + window.__estoqueRules.estoqueAno(data, ano), 0);
+    }
+  };
+})();
+
 // Exibir contador
 document.addEventListener('DOMContentLoaded', function(){
   var b = document.getElementById('badgeLoaded');
@@ -1859,9 +1961,8 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
   const root = document.querySelector('.filters-grid') || document;
   root.addEventListener('click', schedule, true);
   root.addEventListener('change', schedule, true);
-  // MutationObserver desabilitado para evitar loop infinito
-  // const mo = new MutationObserver(schedule);
-  // mo.observe(document.body, { subtree:true, childList:true, characterData:true });
+  const mo = new MutationObserver(schedule);
+  mo.observe(document.body, { subtree:true, childList:true, characterData:true });
 })();
 </script>
 <!-- INJETADO POR CHATGPT: ABREVIAÇÃO SEGURA (pt-BR) E CORREÇÃO DOS CARDS META/REAL/ESTOQUE -->
@@ -2006,9 +2107,8 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
   const root = document.querySelector('.filters-grid') || document;
   root.addEventListener('click', schedule, true);
   root.addEventListener('change', schedule, true);
-  // MutationObserver desabilitado para evitar loop infinito
-  // const mo = new MutationObserver(schedule);
-  // mo.observe(document.body, { subtree:true, childList:true, characterData:true });
+  const mo = new MutationObserver(schedule);
+  mo.observe(document.body, { subtree:true, childList:true, characterData:true });
 })();
 </script>
 <script>
