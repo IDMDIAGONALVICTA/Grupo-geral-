@@ -2525,6 +2525,28 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
 <script>
 (function(){
   const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  
+  // Encontra o último mês que tem dados de vendas ou meta (indicando atividade comercial)
+  function ultimoMesComAtividade(data, ano){
+    for (let i=MESES.length-1; i>=0; i--){
+      const m = MESES[i];
+      const registros = data.filter(r => String(r["Ano"])===String(ano) && r["Mês"]===m);
+      // Verifica se há dados de vendas ou meta neste mês
+      const temAtividade = registros.some(r => 
+        (+r[" Real VGV "]||0) > 0 || 
+        (+r[" Meta VGV "]||0) > 0 || 
+        (+r["Real Qtd"]||0) > 0 || 
+        (+r["Meta Qtd"]||0) > 0
+      );
+      if (temAtividade) {
+        console.log(`[ESTOQUE] Último mês com atividade em ${ano}: ${m}`);
+        return m;
+      }
+    }
+    console.log(`[ESTOQUE] Nenhum mês com atividade encontrado em ${ano}`);
+    return null;
+  }
+  
   function ultimoMesComInfoSum(data, ano, campo){
     for (let i=MESES.length-1; i>=0; i--){
       const m = MESES[i];
@@ -2581,17 +2603,26 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       }
     }
     
-    // Sem filtro de mês: pegar último estoque disponível do ano filtrado
+    // Sem filtro de mês: pegar estoque do último mês com atividade comercial
     if (selectedAno){
-      const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque Qtd");
-      return soma;
+      const mesAtividade = ultimoMesComAtividade(data, selectedAno);
+      if (mesAtividade) {
+        const estoque = data.filter(r => String(r["Ano"])===String(selectedAno) && r["Mês"]===mesAtividade)
+                            .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
+        return estoque;
+      }
+      return 0;
     } else {
-      // Sem filtro de ano: pegar o último mês do ano mais recente
+      // Sem filtro de ano: pegar o último mês com atividade do ano mais recente
       const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
       if (anos.length > 0) {
         const anoMaisRecente = anos[0];
-        const {soma} = ultimoMesComInfoSum(data, anoMaisRecente, "Estoque Qtd");
-        return soma;
+        const mesAtividade = ultimoMesComAtividade(data, anoMaisRecente);
+        if (mesAtividade) {
+          const estoque = data.filter(r => String(r["Ano"])===String(anoMaisRecente) && r["Mês"]===mesAtividade)
+                              .reduce((s,r)=> s + (+r["Estoque Qtd"]||0), 0);
+          return estoque;
+        }
       }
       return 0;
     }
@@ -2640,17 +2671,26 @@ const vsoMedio = estoqueVGV > 0 ? (realVGV / estoqueVGV * 100) : 0;
       }
     }
     
-    // Sem filtro de mês: pegar último estoque disponível do ano filtrado
+    // Sem filtro de mês: pegar estoque do último mês com atividade comercial
     if (selectedAno){
-      const {soma} = ultimoMesComInfoSum(data, selectedAno, "Estoque VGV");
-      return soma;
+      const mesAtividade = ultimoMesComAtividade(data, selectedAno);
+      if (mesAtividade) {
+        const estoque = data.filter(r => String(r["Ano"])===String(selectedAno) && r["Mês"]===mesAtividade)
+                            .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+        return estoque;
+      }
+      return 0;
     } else {
-      // Sem filtro de ano: pegar o último mês do ano mais recente
+      // Sem filtro de ano: pegar o último mês com atividade do ano mais recente
       const anos = Array.from(new Set(data.map(r=>r["Ano"]).filter(x=>x!=null))).sort((a,b)=>b-a);
       if (anos.length > 0) {
         const anoMaisRecente = anos[0];
-        const {soma} = ultimoMesComInfoSum(data, anoMaisRecente, "Estoque VGV");
-        return soma;
+        const mesAtividade = ultimoMesComAtividade(data, anoMaisRecente);
+        if (mesAtividade) {
+          const estoque = data.filter(r => String(r["Ano"])===String(anoMaisRecente) && r["Mês"]===mesAtividade)
+                              .reduce((s,r)=> s + (+r["Estoque VGV"]||0), 0);
+          return estoque;
+        }
       }
       return 0;
     }
