@@ -7,118 +7,148 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 
-    // ======= INÍCIO: Carregamento Automático da Google Planilha =======
-    const GOOGLE_SHEET_PUBHTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pubhtml?gid=0&single=true";
-    const GOOGLE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pub?gid=0&single=true&output=csv";
+    // ======= INÍCIO: Loader Planilha (CSV + fallback HTML) =======
+const GOOGLE_SHEET_PUBHTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pubhtml?gid=0&single=true";
+const GOOGLE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pub?gid=0&single=true&output=csv";
 
-    // Normaliza nomes de colunas para chaves esperadas no dashboard
-    function normalizeHeader(h) {
-        if (!h) return "";
-        const s = h.toString().trim().toLowerCase();
-        const map = {
-            "empresa": "empresa",
-            "empresas": "empresa",
-            "mes": "mes",
-            "mês": "mes",
-            "month": "mes",
-            "ano": "ano",
-            "year": "ano",
-            "linha": "linhaProduto",
-            "linha de produto": "linhaProduto",
-            "linhaproduto": "linhaProduto",
-            "produto": "produto",
-            "meta vgv": "metaVGV",
-            "metavgv": "metaVGV",
-            "real vgv": "realVGV",
-            "realvgv": "realVGV",
-            "meta qtd": "metaQtd",
-            "metaqtd": "metaQtd",
-            "real qtd": "realQtd",
-            "realqtd": "realQtd",
-            "estoque vgv": "estoqueVGV",
-            "estoquevgv": "estoqueVGV",
-            "estoque qtd": "estoqueQtd",
-            "estoqueqtd": "estoqueQtd",
-            "% vso": "vso",
-            "vso": "vso"
-        };
-        return map[s] || s.replace(/\s+/g, "");
+function normalizeHeader(h) {
+  if (!h) return "";
+  const s = h.toString().trim().toLowerCase();
+  const map = {
+    "empresa":"empresa","empresas":"empresa",
+    "mes":"mes","mês":"mes","month":"mes",
+    "ano":"ano","year":"ano",
+    "linha":"linhaProduto","linha de produto":"linhaProduto","linhaproduto":"linhaProduto",
+    "produto":"produto",
+    "meta vgv":"metaVGV","metavgv":"metaVGV",
+    "real vgv":"realVGV","realvgv":"realVGV",
+    "meta qtd":"metaQtd","metaqtd":"metaQtd",
+    "real qtd":"realQtd","realqtd":"realQtd",
+    "estoque vgv":"estoqueVGV","estoquevgv":"estoqueVGV",
+    "estoque qtd":"estoqueQtd","estoqueqtd":"estoqueQtd",
+    "% vso":"vso","vso":"vso"
+  };
+  return map[s] || s.replace(/\s+/g, "");
+}
+
+// CSV robusto (suporta vírgulas entre aspas)
+function parseCSV(text) {
+  const rows = [];
+  let cur = [], field = "", inQuotes = false;
+  const pushField = () => { cur.push(field); field=""; };
+  const pushRow = () => { rows.push(cur); cur=[]; };
+  for (let i=0;i<text.length;i++) {
+    const c = text[i];
+    if (c === '"') {
+      if (inQuotes && text[i+1] === '"') { field += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (c === ',' && !inQuotes) { pushField(); }
+    else if ((c === '\n' || c === '\r') && !inQuotes) {
+      if (field.length || cur.length) { pushField(); pushRow(); }
+      if (c === '\r' && text[i+1] === '\n') i++;
+    } else {
+      field += c;
     }
+  }
+  if (field.length || cur.length) { pushField(); pushRow(); }
+  if (!rows.length) return [];
 
-    // Converte CSV para objetos, mapeando cabeçalhos
-    function parseCSV(text) {
-        const lines = text.replace(/\r/g, "").split("\n").filter(Boolean);
-        if (!lines.length) return [];
-        const rawHeaders = lines[0].split(",").map(h => normalizeHeader(h));
-        const rows = [];
-        for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(",");
-            const obj = {};
-            for (let j = 0; j < rawHeaders.length; j++) {
-                const key = rawHeaders[j] || `col_${j}`;
-                obj[key] = (cols[j] ?? "").trim();
-            }
-            rows.push(obj);
-        }
-        return rows;
+  const headers = rows[0].map(normalizeHeader);
+  return rows.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, idx) => obj[h || `col_${idx}`] = (r[idx] || "").trim());
+    return obj;
+  });
+}
+
+async function fetchCSV() {
+  const url = GOOGLE_SHEET_CSV + "&cachebust=" + Date.now();
+  const resp = await fetch(url, { cache:"no-store" });
+  if (!resp.ok) throw new Error("CSV HTTP " + resp.status);
+  const text = await resp.text();
+  const data = parseCSV(text);
+  if (!data.length) throw new Error("CSV sem linhas");
+  return data;
+}
+
+// Fallback: parsear a tabela do pubhtml
+function parsePubHtmlTable(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const table = doc.querySelector("table");
+  if (!table) return [];
+  const rows = Array.from(table.querySelectorAll("tr"));
+  if (!rows.length) return [];
+  const ths = Array.from(rows[0].querySelectorAll("th,td")).map(th => normalizeHeader(th.textContent));
+  const out = [];
+  for (let i=1;i<rows.length;i++) {
+    const tds = Array.from(rows[i].querySelectorAll("td"));
+    if (!tds.length) continue;
+    const obj = {};
+    for (let j=0;j<ths.length;j++) {
+      const key = ths[j] || `col_${j}`;
+      obj[key] = (tds[j] ? tds[j].textContent.trim() : "");
     }
+    out.push(obj);
+  }
+  return out;
+}
 
-    async function fetchSheetRows(retries = 2) {
-        const url = GOOGLE_SHEET_CSV + "&cachebust=" + Date.now();
-        let lastErr;
-        for (let t = 0; t <= retries; t++) {
-            try {
-                const resp = await fetch(url, { cache: "no-store" });
-                if (!resp.ok) throw new Error("HTTP " + resp.status);
-                const text = await resp.text();
-                const parsed = parseCSV(text);
-                if (!parsed || !parsed.length) throw new Error("CSV vazio");
-                return parsed;
-            } catch (e) {
-                lastErr = e;
-                await new Promise(r => setTimeout(r, 400 * (t + 1)));
-            }
-        }
-        throw lastErr || new Error("Falha ao carregar planilha");
+async function fetchPubHtml() {
+  const url = GOOGLE_SHEET_PUBHTML + "&cachebust=" + Date.now();
+  const resp = await fetch(url, { cache:"no-store" });
+  if (!resp.ok) throw new Error("PUBHTML HTTP " + resp.status);
+  const html = await resp.text();
+  const data = parsePubHtmlTable(html);
+  if (!data.length) throw new Error("PUBHTML sem linhas");
+  return data;
+}
+
+let csvData = []; // dataset global
+
+async function bootstrapFromSheet() {
+  try {
+    console.time("fetch-csv");
+    csvData = await fetchCSV();
+    console.timeEnd("fetch-csv");
+  } catch (e1) {
+    console.warn("Falha CSV, tentando fallback PUBHTML:", e1);
+    try {
+      console.time("fetch-pubhtml");
+      csvData = await fetchPubHtml();
+      console.timeEnd("fetch-pubhtml");
+    } catch (e2) {
+      console.error("Falha PUBHTML também:", e2);
+      alert("Não foi possível carregar os dados da planilha publicada.\n\nPossíveis causas:\n• O arquivo NÃO está 'Publicado na Web' (Arquivo → Compartilhar → Publicar na Web).\n• O navegador bloqueou a requisição por estar abrindo via arquivo local (file://). Abra este HTML em http://localhost usando um servidor local (ex.: VS Code Live Server ou 'python -m http.server').\n• A aba/GID não corresponde aos dados.\n\nDetalhes:\nCSV: " + (e1?.message||e1) + "\nPUBHTML: " + (e2?.message||e2));
+      return;
     }
+  }
 
-    // Substitui o dataset global e inicializa UI
-    let csvData = []; // será preenchido dinamicamente a partir da planilha
+  csvData = csvData.map(r => ({
+    empresa: r.empresa || r.Empresa || "",
+    mes: r.mes || r.Mes || r["mês"] || r["Mês"] || "",
+    ano: (r.ano || r.Ano || "").toString(),
+    linhaProduto: r.linhaProduto || r["linha de produto"] || r.linha || r.Linha || "",
+    produto: r.produto || r.Produto || "",
+    metaVGV: r.metaVGV || r["meta vgv"] || r.MetaVGV || r["Meta VGV"] || "0",
+    realVGV: r.realVGV || r["real vgv"] || r.RealVGV || r["Real VGV"] || "0",
+    metaQtd: r.metaQtd || r["meta qtd"] || r.MetaQtd || r["Meta Qtd"] || "0",
+    realQtd: r.realQtd || r["real qtd"] || r.RealQtd || r["Real Qtd"] || "0",
+    estoqueVGV: r.estoqueVGV || r["estoque vgv"] || r.EstoqueVGV || r["Estoque VGV"] || "0",
+    estoqueQtd: r.estoqueQtd || r["estoque qtd"] || r.EstoqueQtd || r["Estoque Qtd"] || "0",
+    vso: r.vso || r["% vso"] || r.VSO || r["% VSO"] || "0%"
+  }));
 
-    async function bootstrapFromSheet() {
-        try {
-            const rows = await fetchSheetRows(2);
-            // Harmoniza campos esperados pelo restante do código
-            csvData = rows.map(r => ({
-                empresa: r.empresa || r.Empresa || "",
-                mes: r.mes || r.Mes || r.mês || r.Mês || "",
-                ano: (r.ano || r.Ano || "").toString(),
-                linhaProduto: r.linhaProduto || r["linha de produto"] || r.linha || r.Linha || "",
-                produto: r.produto || r.Produto || "",
-                metaVGV: r.metaVGV || r["meta vgv"] || r.MetaVGV || r["Meta VGV"] || "0",
-                realVGV: r.realVGV || r["real vgv"] || r.RealVGV || r["Real VGV"] || "0",
-                metaQtd: r.metaQtd || r["meta qtd"] || r.MetaQtd || r["Meta Qtd"] || "0",
-                realQtd: r.realQtd || r["real qtd"] || r.RealQtd || r["Real Qtd"] || "0",
-                estoqueVGV: r.estoqueVGV || r["estoque vgv"] || r.EstoqueVGV || r["Estoque VGV"] || "0",
-                estoqueQtd: r.estoqueQtd || r["estoque qtd"] || r.EstoqueQtd || r["Estoque Qtd"] || "0",
-                vso: r.vso || r["% vso"] || r.VSO || r["% VSO"] || "0%"
-            }));
-            if (typeof init === "function") {
-                init();
-            } else if (typeof applyFilters === "function") {
-                applyFilters();
-            }
-            console.log("Planilha carregada:", csvData.length, "linhas");
-        } catch (err) {
-            console.error("Erro ao carregar a planilha:", err);
-            alert("Erro ao carregar dados da planilha publicada. Verifique se o link está publicado na Web com acesso público (Arquivo > Compartilhar > Publicar na Web) e se há conteúdo no CSV.\n\nDetalhes: " + (err && err.message ? err.message : err));
-        }
-    }
+  if (typeof init === "function") { init(); }
+  else if (typeof applyFilters === "function") { applyFilters(); }
+  console.log("Planilha carregada com", csvData.length, "linhas.");
+}
 
-    document.addEventListener("DOMContentLoaded", () => {
-        bootstrapFromSheet();
-    });
-    // ======= FIM: Carregamento Automático da Google Planilha =======
+window.addEventListener("load", () => {
+  bootstrapFromSheet();
+});
+// ======= FIM: Loader Planilha =======
+
 
 </script>
     <style>
