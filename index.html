@@ -1915,5 +1915,194 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 // === END DEBUG + FALLBACK ===
 </script>
+
+<!-- ===== Loader + Debug ===== -->
+<style>
+  #sheetLoaderOverlay {
+    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center;
+    background: rgba(0,0,0,.05); backdrop-filter: blur(2px); z-index: 9999; font-family: Inter, Arial;
+  }
+  #sheetLoaderOverlay .card {
+    background: #fff; border-radius: 14px; padding: 16px 20px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    max-width: 560px; width: 92%;
+  }
+  #sheetLoaderOverlay h3 { margin: 0 0 6px; font-size: 16px; color: #00512A; }
+  #sheetLoaderOverlay p { margin: 0; font-size: 13px; color: #333; }
+  #sheetDebug {
+    position: fixed; right: 12px; bottom: 12px; background: #0b0b0b; color:#e7e7e7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    padding: 10px 12px; border-radius: 10px; font-size: 12px; z-index: 9999; max-width: 45ch;
+  }
+  #sheetDebug button { margin-top:8px; font-size:12px; }
+</style>
+<div id="sheetLoaderOverlay" hidden>
+  <div class="card">
+    <h3>Carregando dados da Planilha…</h3>
+    <p>Buscando dados publicados. Se isso demorar, verifique: <br>• Abra este HTML via <b>http://localhost</b> (não file://).<br>• Planilha está <b>Publicada na Web</b>.<br>• A aba correta (GID=0) tem dados.</p>
+  </div>
+</div>
+<div id="sheetDebug" hidden>
+  <div><b>Sheet Debug</b></div>
+  <div id="sheetDebugLog"></div>
+  <button id="sheetDebugBtn">Testar csvData</button>
+</div>
+<script>
+(function(){
+  const PUBHTML = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pubhtml?gid=0&single=true";
+  const CSVURL  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSju9gP6RC3zHnt5qHlUPuqJMKCqr2TIQ0y7RIhEhGkuUZLGjzKCp6M0kYnqmkLEKJQXNEZycZgCSv6/pub?gid=0&single=true&output=csv";
+  const overlay = document.getElementById("sheetLoaderOverlay");
+  const debug = document.getElementById("sheetDebug");
+  const logEl = document.getElementById("sheetDebugLog");
+  const btn = document.getElementById("sheetDebugBtn");
+  const log = (m) => { console.log("[SHEET]", m); if (logEl) logEl.innerText = m; };
+
+  window.csvData = window.csvData || [];
+  window.SHEET_READY = new Promise((resolve,reject)=>{ window.__resolveSheet = resolve; window.__rejectSheet = reject; });
+
+  function showOverlay() { if (overlay) overlay.hidden = false; if (debug) debug.hidden = false; }
+  function hideOverlay() { if (overlay) overlay.hidden = true; }
+
+  function normalizeHeader(h) {
+    if (!h) return "";
+    const s = h.toString().trim().toLowerCase();
+    const map = {
+      "empresa":"empresa","empresas":"empresa",
+      "mes":"mes","mês":"mes","month":"mes",
+      "ano":"ano","year":"ano",
+      "linha":"linhaProduto","linha de produto":"linhaProduto","linhaproduto":"linhaProduto",
+      "produto":"produto",
+      "meta vgv":"metaVGV","metavgv":"metaVGV",
+      "real vgv":"realVGV","realvgv":"realVGV",
+      "meta qtd":"metaQtd","metaqtd":"metaQtd",
+      "real qtd":"realQtd","realqtd":"realQtd",
+      "estoque vgv":"estoqueVGV","estoquevgv":"estoqueVGV",
+      "estoque qtd":"estoqueQtd","estoqueqtd":"estoqueQtd",
+      "% vso":"vso","vso":"vso"
+    };
+    return map[s] || s.replace(/\s+/g, "");
+  }
+
+  function parseCSV(text) {
+    const rows = [];
+    let cur = [], field = "", inQuotes = false;
+    const pushField = () => { cur.push(field); field=""; };
+    const pushRow = () => { rows.push(cur); cur=[]; };
+    for (let i=0;i<text.length;i++) {
+      const c = text[i];
+      if (c === '"') {
+        if (inQuotes && text[i+1] === '"') { field += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (c === ',' && !inQuotes) { pushField(); }
+      else if ((c === '\n' || c === '\r') && !inQuotes) {
+        if (field.length || cur.length) { pushField(); pushRow(); }
+        if (c === '\r' && text[i+1] === '\n') i++;
+      } else {
+        field += c;
+      }
+    }
+    if (field.length || cur.length) { pushField(); pushRow(); }
+    if (!rows.length) return [];
+    const headers = rows[0].map(normalizeHeader);
+    return rows.slice(1).map(r => {
+      const obj = {};
+      headers.forEach((h, idx) => obj[h || `col_${idx}`] = (r[idx] || "").trim());
+      return obj;
+    });
+  }
+
+  async function fetchCSV() {
+    const url = CSVURL + "&cachebust=" + Date.now();
+    const resp = await fetch(url, { cache:"no-store" });
+    if (!resp.ok) throw new Error("CSV HTTP " + resp.status);
+    const text = await resp.text();
+    const data = parseCSV(text);
+    if (!data.length) throw new Error("CSV sem linhas");
+    return data;
+  }
+
+  function parsePubHtmlTable(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const table = doc.querySelector("table");
+    if (!table) return [];
+    const rows = Array.from(table.querySelectorAll("tr"));
+    if (!rows.length) return [];
+    const ths = Array.from(rows[0].querySelectorAll("th,td")).map(th => normalizeHeader(th.textContent));
+    const out = [];
+    for (let i=1;i<rows.length;i++) {
+      const tds = Array.from(rows[i].querySelectorAll("td"));
+      if (!tds.length) continue;
+      const obj = {};
+      for (let j=0;j<ths.length;j++) {
+        const key = ths[j] || `col_${j}`;
+        obj[key] = (tds[j] ? tds[j].textContent.trim() : "");
+      }
+      out.push(obj);
+    }
+    return out;
+  }
+
+  async function fetchPubHtml() {
+    const url = PUBHTML + "&cachebust=" + Date.now();
+    const resp = await fetch(url, { cache:"no-store" });
+    if (!resp.ok) throw new Error("PUBHTML HTTP " + resp.status);
+    const html = await resp.text();
+    const data = parsePubHtmlTable(html);
+    if (!data.length) throw new Error("PUBHTML sem linhas");
+    return data;
+  }
+
+  async function bootstrap() {
+    try {
+      showOverlay(); log("Tentando CSV…");
+      window.csvData = await fetchCSV();
+      log("CSV OK: " + window.csvData.length + " linhas");
+    } catch (e1) {
+      log("CSV falhou (" + (e1 && e1.message) + "), tentando PUBHTML…");
+      try {
+        window.csvData = await fetchPubHtml();
+        log("PUBHTML OK: " + window.csvData.length + " linhas");
+      } catch (e2) {
+        hideOverlay();
+        log("Falha PUBHTML (" + (e2 && e2.message) + ")");
+        alert("Não foi possível carregar os dados da planilha publicada.\n\nPossíveis causas:\n• Abra o HTML via http://localhost (não file://).\n• A planilha precisa estar 'Publicada na Web'.\n• Verifique se a aba (gid=0) tem dados.\n\nCSV: " + (e1 && e1.message) + "\nPUBHTML: " + (e2 && e2.message));
+        window.__rejectSheet(e2);
+        return;
+      }
+    }
+    // Harmonização final
+    window.csvData = window.csvData.map(r => ({
+      empresa: r.empresa || r.Empresa || "",
+      mes: r.mes || r.Mes || r["mês"] || r["Mês"] || "",
+      ano: (r.ano || r.Ano || "").toString(),
+      linhaProduto: r.linhaProduto || r["linha de produto"] || r.linha || r.Linha || "",
+      produto: r.produto || r.Produto || "",
+      metaVGV: r.metaVGV || r["meta vgv"] || r.MetaVGV || r["Meta VGV"] || "0",
+      realVGV: r.realVGV || r["real vgv"] || r.RealVGV || r["Real VGV"] || "0",
+      metaQtd: r.metaQtd || r["meta qtd"] || r.MetaQtd || r["Meta Qtd"] || "0",
+      realQtd: r.realQtd || r["real qtd"] || r.RealQtd || r["Real Qtd"] || "0",
+      estoqueVGV: r.estoqueVGV || r["estoque vgv"] || r.EstoqueVGV || r["Estoque VGV"] || "0",
+      estoqueQtd: r.estoqueQtd || r["estoque qtd"] || r.EstoqueQtd || r["Estoque Qtd"] || "0",
+      vso: r.vso || r["% vso"] || r.VSO || r["% VSO"] || "0%"
+    }));
+
+    // Dispara evento e resolve promise para quem precisar esperar.
+    document.dispatchEvent(new CustomEvent("sheet-data-ready", { detail: { rows: window.csvData.length }}));
+    if (typeof init === "function") { try { init(); } catch(e){ console.warn("init() falhou:", e); } }
+    if (typeof applyFilters === "function") { try { applyFilters(); } catch(e){ console.warn("applyFilters() falhou:", e); } }
+
+    hideOverlay();
+    window.__resolveSheet(window.csvData);
+  }
+
+  // expõe helper de debug
+  if (btn) btn.onclick = () => alert("csvData linhas: " + (window.csvData && window.csvData.length));
+
+  // Garante que todo o resto do HTML já carregou
+  window.addEventListener("load", bootstrap);
+})();
+</script>
+<!-- ===== Fim Loader + Debug ===== -->
+
 </body>
 </html>
